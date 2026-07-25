@@ -3,7 +3,7 @@ package toolcatalog
 import (
 	"fmt"
 
-	"github.com/futuretea/mcp-server-template/pkg/toolset"
+	"github.com/futuretea/postgres-mcp-server/pkg/toolset"
 )
 
 // Build collects, filters, and validates tools for internal consumers.

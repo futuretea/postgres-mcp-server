@@ -2,12 +2,13 @@ package cmd_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
 	"testing"
 
-	"github.com/futuretea/mcp-server-template/internal/cmd"
+	"github.com/futuretea/postgres-mcp-server/internal/cmd"
 )
 
 func TestRootHelpListsSubcommands(t *testing.T) {
@@ -41,25 +42,63 @@ func TestRootWithoutArgsShowsHelp(t *testing.T) {
 	}
 }
 
-func TestToolsListAndCall(t *testing.T) {
+func TestToolsCatalogIsPostgresAndDoesNotNeedExecutionConfig(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://reader:CATALOG_ONLY_MARKER@%zz")
+	t.Setenv("PGHOST", "one-target,another-target")
+
 	var out bytes.Buffer
 	root := cmd.NewRootCommand(cmd.IOStreams{Out: &out, ErrOut: &out})
 	root.SetArgs([]string{"tools", "list"})
 	if err := root.Execute(); err != nil {
-		t.Fatalf("tools list: %v", err)
+		t.Fatalf("tools list must be catalog-only: %v", err)
 	}
-	if !strings.Contains(out.String(), "echo") || !strings.Contains(out.String(), "ping") {
-		t.Fatalf("tools list missing echo/ping:\n%s", out.String())
+	for _, name := range []string{
+		"postgres_get_server_info",
+		"postgres_list_databases",
+		"postgres_list_schemas",
+		"postgres_list_tables",
+		"postgres_describe_table",
+		"postgres_list_indexes",
+		"postgres_query",
+	} {
+		if !strings.Contains(out.String(), name) {
+			t.Fatalf("tools list missing %q:\n%s", name, out.String())
+		}
+	}
+	for _, removedTemplateTool := range []string{"ec" + "ho", "pi" + "ng"} {
+		if strings.Contains(out.String(), removedTemplateTool) {
+			t.Fatalf("tools list retained template tool %q:\n%s", removedTemplateTool, out.String())
+		}
 	}
 
 	out.Reset()
 	root = cmd.NewRootCommand(cmd.IOStreams{Out: &out, ErrOut: &out})
-	root.SetArgs([]string{"tools", "call", "echo", "--params", `{"message":"hi"}`})
+	root.SetArgs([]string{"tools", "describe", "postgres_query", "--json"})
 	if err := root.Execute(); err != nil {
-		t.Fatalf("tools call: %v", err)
+		t.Fatalf("tools describe postgres_query must be catalog-only: %v", err)
 	}
-	if strings.TrimSpace(out.String()) != "hi" {
-		t.Fatalf("echo result = %q", out.String())
+	var description struct {
+		Name        string         `json:"name"`
+		InputSchema map[string]any `json:"inputSchema"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &description); err != nil {
+		t.Fatalf("tools describe output is not JSON: %v\n%s", err, out.String())
+	}
+	if description.Name != "postgres_query" || description.InputSchema["type"] != "object" {
+		t.Fatalf("postgres_query description = %#v, want object schema", description)
+	}
+}
+
+func TestToolsCallRejectsRawInvalidParametersBeforeDatabaseStartup(t *testing.T) {
+	var out bytes.Buffer
+	root := cmd.NewRootCommand(cmd.IOStreams{Out: &out, ErrOut: io.Discard})
+	root.SetArgs([]string{"tools", "call", "postgres_query", "--params", "null"})
+	err := root.Execute()
+	if err == nil || err.Error() != "[postgres_invalid_params] invalid parameters" {
+		t.Fatalf("tools call invalid parameters error = %v, want stable invalid-parameters error", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("tools call invalid parameters stdout = %q, want no success output", out.String())
 	}
 }
 
@@ -70,7 +109,7 @@ func TestVersionCommand(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("version: %v", err)
 	}
-	if !strings.Contains(out.String(), "mcp-server") {
+	if !strings.Contains(out.String(), "postgres-mcp-server") {
 		t.Fatalf("unexpected version output: %q", out.String())
 	}
 }
@@ -95,10 +134,10 @@ func TestToolsUnknownTool(t *testing.T) {
 func TestToolsRejectsNullParams(t *testing.T) {
 	var out bytes.Buffer
 	root := cmd.NewRootCommand(cmd.IOStreams{Out: &out, ErrOut: &out})
-	root.SetArgs([]string{"tools", "call", "ping", "--params", "null"})
+	root.SetArgs([]string{"tools", "call", "postgres_list_schemas", "--params", "null"})
 	err := root.Execute()
-	if err == nil || !strings.Contains(err.Error(), "expected an object") {
-		t.Fatalf("expected JSON object error, got %v", err)
+	if err == nil || err.Error() != "[postgres_invalid_params] invalid parameters" {
+		t.Fatalf("expected stable invalid-parameters error, got %v", err)
 	}
 }
 
@@ -112,8 +151,7 @@ func TestCommandsReturnOutputErrors(t *testing.T) {
 		{name: "completion install", args: []string{"completion", "install"}},
 		{name: "version", args: []string{"version"}},
 		{name: "tools list", args: []string{"tools", "list"}},
-		{name: "tools describe", args: []string{"tools", "describe", "echo"}},
-		{name: "tools call", args: []string{"tools", "call", "echo", "--params", `{"message":"hi"}`}},
+		{name: "tools describe", args: []string{"tools", "describe", "postgres_query"}},
 	}
 
 	for _, tt := range tests {

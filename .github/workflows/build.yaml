@@ -65,6 +65,9 @@ jobs:
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
+      - name: Run PostgreSQL 17 integration fixture
+        run: make test-integration
+
       - name: Upload coverage
         uses: codecov/codecov-action@v5
         with:
@@ -97,12 +100,13 @@ jobs:
 
       - name: Smoke CLI
         run: |
-          ./bin/mcp-server version
-          ./bin/mcp-server tools list
+          ./bin/postgres-mcp-server version
+          ./bin/postgres-mcp-server tools list
 
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
+    needs: test
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -113,4 +117,4 @@ jobs:
           --build-arg VERSION=ci
           --build-arg GIT_COMMIT=${{ github.sha }}
           --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          -t mcp-server-template:ci .
+          -t postgres-mcp-server:ci .

@@ -1,195 +1,91 @@
-# MCP Server Template
+# PostgreSQL Read-only MCP Server
 
-[中文文档](README.zh.md)
-
-Cloneable minimal MCP (Model Context Protocol) server skeleton with a dual-mode binary: **MCP server** for AI assistants and a small **CLI** for humans. Ships with example tools `echo` / `ping`.
+An MCP (Model Context Protocol) server for discovering one PostgreSQL 17+ instance and running a deliberately narrow SELECT subset. It exposes MCP over stdio or HTTP and includes a CLI.
 
 ## Quick start
 
-```bash
-# Requires Go 1.25+ (see .tool-versions)
+Set a connection target for a minimally privileged PostgreSQL role, then build and inspect the catalog:
+
+```sh
+export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
 make build
-./bin/mcp-server version
-
-# Start MCP server (stdio, default)
-./bin/mcp-server mcp
-
-# List / call tools from the CLI (no MCP client required)
-./bin/mcp-server tools list
-./bin/mcp-server tools call echo --params '{"message":"hello"}'
-./bin/mcp-server tools call ping --params '{}'
+./bin/postgres-mcp-server tools list
+./bin/postgres-mcp-server mcp
 ```
 
-## Features
+`tools list` and `tools describe` do not read database connection settings. Starting MCP/HTTP or calling a tool validates the connection and verifies the server and role before it reports ready.
 
-- **Subcommand CLI**: `mcp` starts the server; `tools` / `version` / `completion` are separate commands
-- **Multi-transport**: stdio, Streamable HTTP, and SSE
-- **Tool filtering**: `--enabled-tools`, `--disabled-tools`, `--enable-domains`, `--disable-domains`
-- **Engineering defaults**: Makefile, Dockerfile, GitHub Actions CI, golangci-lint config, MIT license
+## Tools
 
-## CLI commands
+| Tool | Parameters | Purpose |
+|---|---|---|
+| `postgres_get_server_info` | none | Return server and current connection identity. |
+| `postgres_list_databases` | none | List visible databases. |
+| `postgres_list_schemas` | none | List visible schemas. |
+| `postgres_list_tables` | `schema` | List tables and views in a schema. |
+| `postgres_describe_table` | `schema`, `table` | Describe table columns. |
+| `postgres_list_indexes` | `schema`, `table` | List indexes for a table. |
+| `postgres_query` | `sql` | Run one strict read-only SELECT query. |
 
-| Command | Purpose |
-|---------|---------|
-| `mcp-server mcp` | Start the MCP server (stdio or HTTP) |
-| `mcp-server tools list` | List enabled tools |
-| `mcp-server tools describe <name>` | Show tool schema |
-| `mcp-server tools call <name>` | Invoke a tool with JSON params |
-| `mcp-server version` | Print build metadata |
-| `mcp-server completion <shell>` | Generate shell completion |
+Every successful tool response is one JSON text envelope with `schema_version`, `tool`, and `data`. Parameters must be a JSON object with no unknown keys. Empty-parameter tools require `{}`; missing, `null`, array, or scalar arguments are rejected.
 
-### Tools examples
+## Database connection
 
-```bash
-./bin/mcp-server tools list
-./bin/mcp-server tools list --json
-./bin/mcp-server tools describe echo
-./bin/mcp-server tools describe echo --json
-./bin/mcp-server tools call echo --params '{"message":"hello"}'
-echo '{"message":"hello"}' | ./bin/mcp-server tools call echo --params-file -
-./bin/mcp-server tools call ping --params '{}'
+Use a bare `DATABASE_URL`, or standard PostgreSQL environment variables such as `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, and `PGSSLMODE`. When `DATABASE_URL` is set it takes precedence. Configuration must resolve to one `host:port`; distinct URL or comma-separated `PGHOST` targets are rejected before a connection is created.
+
+At startup the server requires PostgreSQL 17 or newer and rejects service roles that are superusers, bypass row-level security, have replication, or belong to server-file, server-program, or backend-signalling roles. Use a dedicated, least-privilege database role.
+
+## Read-only boundary and deployment risk
+
+Each database operation uses a PostgreSQL read-only transaction and pgx's extended execution protocol. `postgres_query` is parsed as exactly one SELECT, rejecting DML, DDL, row locks, SELECT INTO, modifying CTEs, and selected PostgreSQL built-ins with known side effects.
+
+This is not a complete proof that every user-defined function, extension, FDW, or future PostgreSQL built-in is harmless. Grant only the database access you intend the server to have.
+
+HTTP transports have no authentication or TLS layer. The default listener is loopback. If you set `--listen` to a remote address, place the service only on a trusted network or behind infrastructure that provides the required protection. This server intentionally has no query timeout, row limit, response-size limit, or concurrency budget.
+
+## Running MCP and HTTP
+
+```sh
+# stdio MCP
+./bin/postgres-mcp-server mcp
+
+# HTTP MCP on loopback
+./bin/postgres-mcp-server mcp --port 8080
+
+# Explicit remote listener; see the trusted-network requirement above
+./bin/postgres-mcp-server mcp --port 8080 --listen 0.0.0.0
 ```
 
-## MCP transports
+The HTTP health endpoint is `GET /healthz`. See `config.example.yaml` for transport and tool-filter settings; database connection settings remain in the environment.
 
-### Stdio (default)
+## CLI
 
-```bash
-./bin/mcp-server mcp
+```sh
+./bin/postgres-mcp-server tools list --json
+./bin/postgres-mcp-server tools describe postgres_query --json
+./bin/postgres-mcp-server tools call postgres_list_schemas --params '{}'
+./bin/postgres-mcp-server tools call postgres_query --params '{"sql":"SELECT 1"}'
+./bin/postgres-mcp-server version
 ```
 
-Cursor / Claude Desktop style config:
+## Container
 
-```json
-{
-  "mcpServers": {
-    "mcp-server-template": {
-      "command": "/absolute/path/to/bin/mcp-server",
-      "args": ["mcp"]
-    }
-  }
-}
-```
+`make docker` first builds the Alpine CGO parser-check target and then builds the runnable image:
 
-### Streamable HTTP
-
-```bash
-./bin/mcp-server mcp --port 8080
-curl -s http://127.0.0.1:8080/healthz
-```
-
-Client config example:
-
-```json
-{
-  "mcpServers": {
-    "mcp-server-template": {
-      "url": "http://127.0.0.1:8080/mcp"
-    }
-  }
-}
-```
-
-### SSE
-
-Same process as HTTP mode. Endpoints:
-
-| Path | Purpose |
-|------|---------|
-| `/healthz` | Health check (`GET`/`HEAD`) |
-| `/mcp` | Streamable HTTP |
-| `/sse` | SSE connection |
-| `/message` | SSE message endpoint |
-
-```bash
-./bin/mcp-server mcp --port 8080 --sse-base-url http://127.0.0.1:8080
-```
-
-### Docker
-
-```bash
-# Build
+```sh
 make docker
-
-# Stdio (default ENTRYPOINT is `mcp-server mcp`)
-docker run -i --rm mcp-server-template:dev
-
-# HTTP
-docker run --rm -p 8080:8080 mcp-server-template:dev --port 8080 --listen 0.0.0.0
+docker run --rm -i --env DATABASE_URL postgres-mcp-server:dev
 ```
 
-HTTP / SSE have **no auth and no TLS**. Default `--listen 127.0.0.1`. Use only on trusted networks; put a reverse proxy in front if you expose the port.
+The image entrypoint is `postgres-mcp-server mcp`.
 
-## Configuration
+## Development checks
 
-Priority: **flags > environment variables > config file > defaults**.
-
-### Environment variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MCP_LOG_LEVEL` | Log level | `info` |
-| `MCP_PORT` | HTTP port (`0` = stdio) | `0` |
-| `MCP_LISTEN` | HTTP listen host | `127.0.0.1` |
-| `MCP_SSE_BASE_URL` | Public SSE base URL | `""` |
-
-### Config file
-
-See `config.example.yaml`:
-
-```yaml
-port: 0
-listen: 127.0.0.1
-sse_base_url: ""
-log_level: info
-enabled_tools: []
-disabled_tools: []
-enabled_domains: []
-disabled_domains: []
-```
-
-```bash
-./bin/mcp-server mcp --config config.example.yaml --port 8080
-```
-
-## Project layout
-
-```
-cmd/mcp-server/          # binary entrypoint
-internal/cmd/             # cobra CLI (mcp / tools / version / completion)
-pkg/core/                 # config / logging / version
-pkg/server/mcp/           # MCP registration and transports
-pkg/server/http/          # HTTP / SSE / healthz
-pkg/toolset/              # Toolset interface and filters
-pkg/toolset/example/      # sample tools (replace with your domain)
-.github/workflows/        # CI
-```
-
-## Extend with your own tools
-
-1. Add `pkg/toolset/<your-domain>/` implementing `toolset.Toolset`.
-2. Register it in `internal/cmd/root.go` via `defaultToolsets()`.
-3. Control exposure with `--enabled-tools` / `--enable-domains`.
-
-## Development
-
-```bash
-make tidy
+```sh
 make format
 make lint
 make test
-make coverage
-make ci
+make test-integration  # requires a running Docker daemon; creates a PostgreSQL 17 fixture
 make build
 make docker
 ```
-
-CI (`.github/workflows/build.yaml`) runs lint, race tests with coverage upload, multi-OS build, CLI smoke (`version` / `tools list`), and Docker image build.
-
-## Local reference clones
-
-`third-party-projects/` can hold local reference checkouts. It is listed in `.gitignore` and is not part of the template deliverable.
-
-## License
-
-[MIT](LICENSE)

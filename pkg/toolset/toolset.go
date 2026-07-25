@@ -16,13 +16,19 @@ type Toolset interface {
 
 // ServerTool combines an MCP tool definition with its handler.
 type ServerTool struct {
-	Tool    mcp.Tool
-	Handler ToolHandler
-	Domain  string
+	Tool                  mcp.Tool
+	Handler               ToolHandler
+	Domain                string
+	NormalizeRawArguments RawArgumentNormalizer
 }
 
 // ToolHandler handles a tool call.
 type ToolHandler func(ctx context.Context, params map[string]any) (string, error)
+
+// RawArgumentNormalizer validates raw MCP arguments before the transport's
+// legacy map conversion can erase the difference between an object, null,
+// scalar, or array. It is domain-neutral; callers own their error contract.
+type RawArgumentNormalizer func(raw any) (map[string]any, error)
 
 // FilterOptions controls which tools are exposed.
 type FilterOptions struct {

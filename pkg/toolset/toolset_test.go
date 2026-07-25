@@ -5,13 +5,13 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/futuretea/mcp-server-template/pkg/toolset"
+	"github.com/futuretea/postgres-mcp-server/pkg/toolset"
 )
 
 func TestFilterTools(t *testing.T) {
 	tools := []toolset.ServerTool{
-		{Tool: mcp.NewTool("echo"), Domain: "example"},
-		{Tool: mcp.NewTool("ping"), Domain: "example"},
+		{Tool: mcp.NewTool("first"), Domain: "example"},
+		{Tool: mcp.NewTool("second"), Domain: "example"},
 		{Tool: mcp.NewTool("other"), Domain: "other"},
 	}
 
@@ -24,14 +24,14 @@ func TestFilterTools(t *testing.T) {
 			name: "enabled domain and disabled tool",
 			opts: toolset.FilterOptions{
 				EnabledDomains: []string{"example"},
-				DisabledTools:  []string{"ping"},
+				DisabledTools:  []string{"second"},
 			},
-			want: []string{"echo"},
+			want: []string{"first"},
 		},
 		{
 			name: "enabled tools only",
-			opts: toolset.FilterOptions{EnabledTools: []string{"ping"}},
-			want: []string{"ping"},
+			opts: toolset.FilterOptions{EnabledTools: []string{"second"}},
+			want: []string{"second"},
 		},
 		{
 			name: "disabled domain",

@@ -4,16 +4,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/futuretea/mcp-server-template/pkg/core/config"
-	mcpserver "github.com/futuretea/mcp-server-template/pkg/server/mcp"
-	"github.com/futuretea/mcp-server-template/pkg/toolset"
-	"github.com/futuretea/mcp-server-template/pkg/toolset/example"
+	"github.com/futuretea/postgres-mcp-server/internal/postgres"
+	"github.com/futuretea/postgres-mcp-server/pkg/core/config"
+	mcpserver "github.com/futuretea/postgres-mcp-server/pkg/server/mcp"
+	"github.com/futuretea/postgres-mcp-server/pkg/toolset"
 )
 
-func TestNewServerRegistersExampleTools(t *testing.T) {
+func TestNewServerRegistersPostgresTools(t *testing.T) {
 	server, err := mcpserver.NewServer(mcpserver.Configuration{
 		StaticConfig: &config.StaticConfig{LogLevel: "info"},
-		Toolsets:     []toolset.Toolset{&example.Toolset{}},
+		Toolsets:     []toolset.Toolset{postgres.NewToolset(nil)},
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
@@ -24,15 +24,30 @@ func TestNewServerRegistersExampleTools(t *testing.T) {
 		t.Fatal("expected healthy server")
 	}
 	tools := server.GetEnabledTools()
-	if len(tools) != 2 {
-		t.Fatalf("expected 2 tools, got %v", tools)
+	if len(tools) != 7 {
+		t.Fatalf("expected 7 PostgreSQL tools, got %v", tools)
 	}
 	names := map[string]bool{}
 	for _, name := range tools {
 		names[name] = true
 	}
-	if !names["echo"] || !names["ping"] {
-		t.Fatalf("expected echo and ping, got %v", tools)
+	for _, name := range []string{
+		"postgres_get_server_info",
+		"postgres_list_databases",
+		"postgres_list_schemas",
+		"postgres_list_tables",
+		"postgres_describe_table",
+		"postgres_list_indexes",
+		"postgres_query",
+	} {
+		if !names[name] {
+			t.Fatalf("missing PostgreSQL tool %q from %v", name, tools)
+		}
+	}
+	for _, removedTemplateTool := range []string{"ec" + "ho", "pi" + "ng"} {
+		if names[removedTemplateTool] {
+			t.Fatalf("removed tool %q remained registered: %v", removedTemplateTool, tools)
+		}
 	}
 }
 
@@ -49,7 +64,7 @@ func TestNewServerRejectsEmptyToolFilter(t *testing.T) {
 			LogLevel:     "info",
 			EnabledTools: []string{"missing"},
 		},
-		Toolsets: []toolset.Toolset{&example.Toolset{}},
+		Toolsets: []toolset.Toolset{postgres.NewToolset(nil)},
 	})
 	if err == nil || !strings.Contains(err.Error(), "no tools registered") {
 		t.Fatalf("expected no tools registered error, got %v", err)
@@ -60,11 +75,11 @@ func TestNewServerRejectsDuplicateToolNames(t *testing.T) {
 	_, err := mcpserver.NewServer(mcpserver.Configuration{
 		StaticConfig: &config.StaticConfig{LogLevel: "info"},
 		Toolsets: []toolset.Toolset{
-			&example.Toolset{},
-			&example.Toolset{},
+			postgres.NewToolset(nil),
+			postgres.NewToolset(nil),
 		},
 	})
-	if err == nil || !strings.Contains(err.Error(), `duplicate tool name "echo"`) {
+	if err == nil || !strings.Contains(err.Error(), `duplicate tool name "postgres_get_server_info"`) {
 		t.Fatalf("expected duplicate tool name error, got %v", err)
 	}
 }

@@ -7,11 +7,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/futuretea/mcp-server-template/internal/toolcatalog"
-	"github.com/futuretea/mcp-server-template/pkg/core/config"
-	"github.com/futuretea/mcp-server-template/pkg/core/version"
-	"github.com/futuretea/mcp-server-template/pkg/toolset"
-	"github.com/futuretea/mcp-server-template/pkg/toolset/example"
+	"github.com/futuretea/postgres-mcp-server/internal/postgres"
+	"github.com/futuretea/postgres-mcp-server/internal/toolcatalog"
+	"github.com/futuretea/postgres-mcp-server/pkg/core/config"
+	"github.com/futuretea/postgres-mcp-server/pkg/core/version"
+	"github.com/futuretea/postgres-mcp-server/pkg/toolset"
 )
 
 // IOStreams groups the streams used by the CLI.
@@ -28,7 +28,7 @@ func NewRootCommand(streams IOStreams) *cobra.Command {
 
 	command := &cobra.Command{
 		Use:           version.BinaryName,
-		Short:         "MCP server template CLI and Model Context Protocol server",
+		Short:         "Read-only PostgreSQL MCP Server CLI and Model Context Protocol server",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -81,12 +81,12 @@ func loadCLIConfig(cmd *cobra.Command, cfgFile string, v *viper.Viper) (*config.
 	return cfg, nil
 }
 
-func defaultToolsets() []toolset.Toolset {
-	return []toolset.Toolset{&example.Toolset{}}
+func defaultToolsets(service *postgres.Service) []toolset.Toolset {
+	return []toolset.Toolset{postgres.NewToolset(service)}
 }
 
 func buildToolCatalog(cfg *config.StaticConfig) ([]toolset.ServerTool, error) {
-	return toolcatalog.Build(defaultToolsets(), toolset.FilterOptions{
+	return toolcatalog.Build(defaultToolsets(nil), toolset.FilterOptions{
 		EnabledTools:    cfg.EnabledTools,
 		DisabledTools:   cfg.DisabledTools,
 		EnabledDomains:  cfg.EnabledDomains,

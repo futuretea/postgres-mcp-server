@@ -9,10 +9,10 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/rs/zerolog/log"
 
-	"github.com/futuretea/mcp-server-template/internal/toolcatalog"
-	"github.com/futuretea/mcp-server-template/pkg/core/config"
-	"github.com/futuretea/mcp-server-template/pkg/core/version"
-	"github.com/futuretea/mcp-server-template/pkg/toolset"
+	"github.com/futuretea/postgres-mcp-server/internal/toolcatalog"
+	"github.com/futuretea/postgres-mcp-server/pkg/core/config"
+	"github.com/futuretea/postgres-mcp-server/pkg/core/version"
+	"github.com/futuretea/postgres-mcp-server/pkg/toolset"
 )
 
 // Configuration holds server startup settings.
@@ -80,9 +80,18 @@ func (s *Server) registerTool(tool toolset.ServerTool) {
 
 func newToolHandler(tool toolset.ServerTool) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		params := request.GetArguments()
-		if params == nil {
-			params = map[string]any{}
+		var params map[string]any
+		if tool.NormalizeRawArguments != nil {
+			var err error
+			params, err = tool.NormalizeRawArguments(request.GetRawArguments())
+			if err != nil {
+				return NewTextResult("", err), nil
+			}
+		} else {
+			params = request.GetArguments()
+			if params == nil {
+				params = map[string]any{}
+			}
 		}
 
 		result, err := tool.Handler(ctx, params)

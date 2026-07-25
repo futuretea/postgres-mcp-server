@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/futuretea/mcp-server-template/internal/cmd"
+	"github.com/futuretea/postgres-mcp-server/internal/cmd"
 )
 
 func main() {

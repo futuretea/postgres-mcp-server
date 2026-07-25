@@ -1,195 +1,91 @@
-# MCP Server Template
+# PostgreSQL 只读 MCP Server
 
-[English](README.md)
-
-可 clone 的最小 MCP（Model Context Protocol）server 骨架。同一二进制同时提供给 AI 助手用的 **MCP server**，以及给人用的小型 **CLI**。内置示例工具 `echo` / `ping`。
+这是一个面向单个 PostgreSQL 17+ 实例的 MCP（Model Context Protocol）服务。它提供数据库目录发现和受限的 SELECT 查询，可通过 stdio 或 HTTP 使用，也提供 CLI。
 
 ## 快速开始
 
-```bash
-# 需要 Go 1.25+（见 .tool-versions）
+先为最小权限 PostgreSQL 角色设置连接目标，再构建并查看工具目录：
+
+```sh
+export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
 make build
-./bin/mcp-server version
-
-# 启动 MCP server（默认 stdio）
-./bin/mcp-server mcp
-
-# 不经过 MCP 客户端，直接用 CLI 列工具 / 调工具
-./bin/mcp-server tools list
-./bin/mcp-server tools call echo --params '{"message":"hello"}'
-./bin/mcp-server tools call ping --params '{}'
+./bin/postgres-mcp-server tools list
+./bin/postgres-mcp-server mcp
 ```
 
-## 功能
+`tools list` 与 `tools describe` 不会读取数据库连接配置。MCP/HTTP 启动或实际调用工具时才会校验连接，并在 ready 前校验服务端版本与角色。
 
-- **子命令 CLI**：`mcp` 才启动 server；`tools` / `version` / `completion` 独立
-- **多传输**：stdio、Streamable HTTP、SSE
-- **工具过滤**：`--enabled-tools`、`--disabled-tools`、`--enable-domains`、`--disable-domains`
-- **工程化默认项**：Makefile、Dockerfile、GitHub Actions CI、golangci-lint、MIT License
+## 工具
 
-## CLI 命令
+| 工具 | 参数 | 用途 |
+|---|---|---|
+| `postgres_get_server_info` | 无 | 返回服务端与当前连接身份信息。 |
+| `postgres_list_databases` | 无 | 列出可见数据库。 |
+| `postgres_list_schemas` | 无 | 列出可见 schema。 |
+| `postgres_list_tables` | `schema` | 列出 schema 中的表和视图。 |
+| `postgres_describe_table` | `schema`、`table` | 描述表的列。 |
+| `postgres_list_indexes` | `schema`、`table` | 列出表索引。 |
+| `postgres_query` | `sql` | 执行一条严格只读 SELECT。 |
 
-| 命令 | 作用 |
-|------|------|
-| `mcp-server mcp` | 启动 MCP server（stdio 或 HTTP） |
-| `mcp-server tools list` | 列出已启用工具 |
-| `mcp-server tools describe <name>` | 查看工具 schema |
-| `mcp-server tools call <name>` | 用 JSON 参数调用工具 |
-| `mcp-server version` | 打印构建信息 |
-| `mcp-server completion <shell>` | 生成 shell 补全脚本 |
+所有成功响应都是一个 JSON text envelope，固定含有 `schema_version`、`tool` 和 `data`。参数必须是没有未知字段的 JSON object。无参数工具必须传 `{}`；缺失、`null`、数组和标量都会被拒绝。
 
-### tools 示例
+## 数据库连接
 
-```bash
-./bin/mcp-server tools list
-./bin/mcp-server tools list --json
-./bin/mcp-server tools describe echo
-./bin/mcp-server tools describe echo --json
-./bin/mcp-server tools call echo --params '{"message":"hello"}'
-echo '{"message":"hello"}' | ./bin/mcp-server tools call echo --params-file -
-./bin/mcp-server tools call ping --params '{}'
+使用裸 `DATABASE_URL`，或者 PostgreSQL 标准环境变量：`PGHOST`、`PGPORT`、`PGDATABASE`、`PGUSER`、`PGPASSWORD`、`PGSSLMODE`。设置了 `DATABASE_URL` 时它优先。配置只能解析到一个 `host:port`；不同的 URL 目标或逗号分隔的 `PGHOST` 会在创建连接前失败。
+
+服务启动时要求 PostgreSQL 17 或更新版本，并拒绝 superuser、可绕过行级安全、具备复制权限，或属于服务端文件、服务端程序、后端信号角色的服务账号。请使用独立的最小权限数据库角色。
+
+## 只读边界与部署风险
+
+每次数据库操作都在 PostgreSQL read-only transaction 和 pgx extended execution protocol 中执行。`postgres_query` 会解析为恰好一条 SELECT，并拒绝 DML、DDL、行锁、SELECT INTO、修改型 CTE 以及一组已知有副作用的 PostgreSQL 内建函数。
+
+这不是对所有用户函数、扩展、FDW 或未来 PostgreSQL 内建函数无副作用的完整证明。数据库账号只应授予该服务确实需要的权限。
+
+HTTP transport 没有认证或 TLS。默认只监听 loopback。若通过 `--listen` 监听远程地址，只能部署在可信网络中，或放在提供所需保护的基础设施之后。本服务刻意不提供查询超时、行数限制、响应大小限制或并发预算。
+
+## 运行 MCP 与 HTTP
+
+```sh
+# stdio MCP
+./bin/postgres-mcp-server mcp
+
+# loopback HTTP MCP
+./bin/postgres-mcp-server mcp --port 8080
+
+# 显式远程监听；须满足上面的可信网络要求
+./bin/postgres-mcp-server mcp --port 8080 --listen 0.0.0.0
 ```
 
-## MCP 传输模式
+HTTP 健康检查为 `GET /healthz`。transport 和工具过滤配置见 `config.example.yaml`；数据库连接仍只从环境变量读取。
 
-### Stdio（默认）
+## CLI
 
-```bash
-./bin/mcp-server mcp
+```sh
+./bin/postgres-mcp-server tools list --json
+./bin/postgres-mcp-server tools describe postgres_query --json
+./bin/postgres-mcp-server tools call postgres_list_schemas --params '{}'
+./bin/postgres-mcp-server tools call postgres_query --params '{"sql":"SELECT 1"}'
+./bin/postgres-mcp-server version
 ```
 
-Cursor / Claude Desktop 配置示例：
+## 容器
 
-```json
-{
-  "mcpServers": {
-    "mcp-server-template": {
-      "command": "/absolute/path/to/bin/mcp-server",
-      "args": ["mcp"]
-    }
-  }
-}
-```
+`make docker` 会先构建 Alpine CGO parser-check target，再构建可运行镜像：
 
-### Streamable HTTP
-
-```bash
-./bin/mcp-server mcp --port 8080
-curl -s http://127.0.0.1:8080/healthz
-```
-
-客户端配置示例：
-
-```json
-{
-  "mcpServers": {
-    "mcp-server-template": {
-      "url": "http://127.0.0.1:8080/mcp"
-    }
-  }
-}
-```
-
-### SSE
-
-与 HTTP 模式同一进程。端点：
-
-| 路径 | 用途 |
-|------|------|
-| `/healthz` | 健康检查（`GET`/`HEAD`） |
-| `/mcp` | Streamable HTTP |
-| `/sse` | SSE 连接 |
-| `/message` | SSE message endpoint |
-
-```bash
-./bin/mcp-server mcp --port 8080 --sse-base-url http://127.0.0.1:8080
-```
-
-### Docker
-
-```bash
-# 构建
+```sh
 make docker
-
-# Stdio（默认 ENTRYPOINT 为 mcp-server mcp）
-docker run -i --rm mcp-server-template:dev
-
-# HTTP
-docker run --rm -p 8080:8080 mcp-server-template:dev --port 8080 --listen 0.0.0.0
+docker run --rm -i --env DATABASE_URL postgres-mcp-server:dev
 ```
 
-HTTP / SSE **无鉴权、无 TLS**。默认 `--listen 127.0.0.1`。仅在受信网络使用；对外暴露时请自行加反向代理与认证。
+镜像入口是 `postgres-mcp-server mcp`。
 
-## 配置
+## 开发检查
 
-优先级：**flags > 环境变量 > 配置文件 > 默认值**。
-
-### 环境变量
-
-| 变量 | 说明 | 默认 |
-|------|------|------|
-| `MCP_LOG_LEVEL` | 日志级别 | `info` |
-| `MCP_PORT` | HTTP 端口（`0` = stdio） | `0` |
-| `MCP_LISTEN` | HTTP 监听地址 | `127.0.0.1` |
-| `MCP_SSE_BASE_URL` | 对外 SSE base URL | `""` |
-
-### 配置文件
-
-见 `config.example.yaml`：
-
-```yaml
-port: 0
-listen: 127.0.0.1
-sse_base_url: ""
-log_level: info
-enabled_tools: []
-disabled_tools: []
-enabled_domains: []
-disabled_domains: []
-```
-
-```bash
-./bin/mcp-server mcp --config config.example.yaml --port 8080
-```
-
-## 目录结构
-
-```
-cmd/mcp-server/          # 入口
-internal/cmd/            # cobra CLI（mcp / tools / version / completion）
-pkg/core/                # config / logging / version
-pkg/server/mcp/          # MCP 注册与 transport
-pkg/server/http/         # HTTP / SSE / healthz
-pkg/toolset/             # Toolset 接口与过滤
-pkg/toolset/example/     # 示例 tools（替换为你的业务）
-.github/workflows/       # CI
-```
-
-## 扩展自己的 tools
-
-1. 在 `pkg/toolset/<your-domain>/` 实现 `toolset.Toolset`。
-2. 在 `internal/cmd/root.go` 的 `defaultToolsets()` 中挂载。
-3. 用 `--enabled-tools` / `--enable-domains` 控制暴露面。
-
-## 开发
-
-```bash
-make tidy
+```sh
 make format
 make lint
 make test
-make coverage
-make ci
+make test-integration  # 需要 Docker daemon；会创建 PostgreSQL 17 fixture
 make build
 make docker
 ```
-
-CI（`.github/workflows/build.yaml`）会跑 lint、带 race 的测试与覆盖率上传、多 OS 构建、CLI smoke（`version` / `tools list`）以及 Docker 镜像构建。
-
-## 本地对照样例
-
-`third-party-projects/` 可放置本地对照代码，已在 `.gitignore` 中，不属于模板交付物。
-
-## License
-
-[MIT](LICENSE)

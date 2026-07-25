@@ -9,17 +9,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/futuretea/mcp-server-template/pkg/core/config"
-	internalhttp "github.com/futuretea/mcp-server-template/pkg/server/http"
-	mcpserver "github.com/futuretea/mcp-server-template/pkg/server/mcp"
-	"github.com/futuretea/mcp-server-template/pkg/toolset"
-	"github.com/futuretea/mcp-server-template/pkg/toolset/example"
+	"github.com/futuretea/postgres-mcp-server/internal/postgres"
+	"github.com/futuretea/postgres-mcp-server/pkg/core/config"
+	internalhttp "github.com/futuretea/postgres-mcp-server/pkg/server/http"
+	mcpserver "github.com/futuretea/postgres-mcp-server/pkg/server/mcp"
+	"github.com/futuretea/postgres-mcp-server/pkg/toolset"
 )
 
 func TestHealthz(t *testing.T) {
 	mcpServer, err := mcpserver.NewServer(mcpserver.Configuration{
 		StaticConfig: &config.StaticConfig{LogLevel: "info"},
-		Toolsets:     []toolset.Toolset{&example.Toolset{}},
+		Toolsets:     []toolset.Toolset{postgres.NewToolset(nil)},
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
@@ -68,7 +68,7 @@ func TestHealthz(t *testing.T) {
 func TestServeListenerShutdown(t *testing.T) {
 	mcpServer, err := mcpserver.NewServer(mcpserver.Configuration{
 		StaticConfig: &config.StaticConfig{LogLevel: "info"},
-		Toolsets:     []toolset.Toolset{&example.Toolset{}},
+		Toolsets:     []toolset.Toolset{postgres.NewToolset(nil)},
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
