@@ -21,7 +21,8 @@ test-integration:
 		cleanup() { docker rm -f "$$container" >/dev/null 2>&1 || true; }; \
 		trap cleanup EXIT; \
 		for attempt in $$(seq 1 30); do \
-			if docker exec "$$container" pg_isready -U postgres >/dev/null 2>&1; then break; fi; \
+			if docker logs "$$container" 2>&1 | grep -Fq 'PostgreSQL init process complete; ready for start up.' && \
+				docker exec "$$container" pg_isready -U postgres >/dev/null 2>&1; then break; fi; \
 			if [ "$$attempt" = 30 ]; then printf '%s\n' "PostgreSQL fixture did not become ready" >&2; exit 1; fi; \
 			sleep 1; \
 		done; \
