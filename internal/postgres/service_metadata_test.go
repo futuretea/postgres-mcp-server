@@ -107,15 +107,24 @@ func TestServiceMetadataAndQueryUseReadOnlyExtendedProtocol(t *testing.T) {
 		{
 			name: "strict query",
 			results: []metadataResult{
-				resultWithRows([]field{{name: "one", oid: 23}}, []string{"1"}),
-				resultWithRows([]field{{name: "postgres_type", oid: 25}}, []string{"integer"}),
+				resultWithRows(
+					[]field{{name: "one", oid: 23}, {name: "enabled", oid: 16}},
+					[]string{"1", "true"},
+				),
+				resultWithRows([]field{{name: "postgres_type", oid: 25}}, []string{"integer"}, []string{"boolean"}),
 			},
-			invoke:      func(service *Service) (map[string]any, error) { return service.Query(t.Context(), "SELECT 1 AS one") },
+			invoke: func(service *Service) (map[string]any, error) {
+				return service.Query(t.Context(), "SELECT 1 AS one, true AS enabled")
+			},
 			wantQueries: 2,
 			assertPayload: func(t *testing.T, data map[string]any) {
 				t.Helper()
+				columns, ok := data["columns"].([]map[string]any)
+				if !ok || len(columns) != 2 || columns[0]["name"] != "one" || columns[0]["postgres_type"] != "integer" || columns[1]["name"] != "enabled" || columns[1]["postgres_type"] != "boolean" {
+					t.Fatalf("Query() columns = %#v", data["columns"])
+				}
 				rows, ok := data["rows"].([][]any)
-				if !ok || len(rows) != 1 || len(rows[0]) != 1 || rows[0][0] != "1" {
+				if !ok || len(rows) != 1 || len(rows[0]) != 2 || rows[0][0] != "1" || rows[0][1] != "true" {
 					t.Fatalf("Query() rows = %#v", data["rows"])
 				}
 			},

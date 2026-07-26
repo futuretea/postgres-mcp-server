@@ -39,7 +39,7 @@ ENTRYPOINT ["/usr/local/bin/postgres-mcp-server", "mcp"]
 
 FROM runtime AS release
 
-COPY postgres-mcp-server /usr/local/bin/postgres-mcp-server
+COPY --from=builder /usr/local/bin/postgres-mcp-server /usr/local/bin/postgres-mcp-server
 
 FROM runtime AS dev
 

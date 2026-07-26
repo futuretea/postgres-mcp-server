@@ -48,6 +48,7 @@ func TestLoadPostgresExecutionConfig(t *testing.T) {
 			pgUser:      "ignored",
 			pgPassword:  "ignored",
 			pgSSLMode:   "require",
+			wantHost:    "url-primary",
 		},
 		{
 			name:       "standard PostgreSQL environment fallback",

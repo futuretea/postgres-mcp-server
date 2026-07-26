@@ -160,13 +160,13 @@ func (s *Service) Query(ctx context.Context, sql string) (map[string]any, error)
 		return nil, queryError()
 	}
 
+	postgresTypes, err := s.formatTypes(ctx, result.typeOIDs)
+	if err != nil {
+		return nil, queryError()
+	}
 	columns := make([]map[string]any, len(result.fieldNames))
 	for index, name := range result.fieldNames {
-		postgresType, err := s.formatType(ctx, result.typeOIDs[index])
-		if err != nil {
-			return nil, queryError()
-		}
-		columns[index] = map[string]any{"name": name, "postgres_type": postgresType}
+		columns[index] = map[string]any{"name": name, "postgres_type": postgresTypes[index]}
 	}
 
 	rows := make([][]any, len(result.rows))
@@ -181,12 +181,24 @@ func (s *Service) Query(ctx context.Context, sql string) (map[string]any, error)
 	return map[string]any{"columns": columns, "rows": rows}, nil
 }
 
-func (s *Service) formatType(ctx context.Context, oid uint32) (string, error) {
-	result, err := s.queryText(ctx, `SELECT format_type($1::oid, NULL)::text AS postgres_type`, int64(oid))
-	if err != nil || len(result.rows) != 1 || len(result.rows[0]) != 1 || result.rows[0][0] == nil {
-		return "", metadataError()
+func (s *Service) formatTypes(ctx context.Context, oids []uint32) ([]string, error) {
+	if len(oids) == 0 {
+		return []string{}, nil
 	}
-	return *result.rows[0][0], nil
+	result, err := s.queryText(ctx, `SELECT format_type(oid, NULL)::text AS postgres_type
+		FROM unnest($1::oid[]) WITH ORDINALITY AS input(oid, ordinal)
+		ORDER BY ordinal`, oids)
+	if err != nil || len(result.rows) != len(oids) {
+		return nil, metadataError()
+	}
+	postgresTypes := make([]string, len(result.rows))
+	for index, row := range result.rows {
+		if len(row) != 1 || row[0] == nil {
+			return nil, metadataError()
+		}
+		postgresTypes[index] = *row[0]
+	}
+	return postgresTypes, nil
 }
 
 func objectsFromRows(result queryResult) []map[string]any {
