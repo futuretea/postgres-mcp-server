@@ -1,0 +1,37 @@
+{
+  "name": "@futuretea/postgres-mcp-server",
+  "version": "0.0.0",
+  "description": "Read-only PostgreSQL Model Context Protocol server",
+  "main": "./bin/index.js",
+  "bin": {
+    "postgres-mcp-server": "bin/index.js"
+  },
+  "optionalDependencies": {
+    "@futuretea/postgres-mcp-server-darwin-amd64": "0.0.0",
+    "@futuretea/postgres-mcp-server-darwin-arm64": "0.0.0",
+    "@futuretea/postgres-mcp-server-linux-amd64": "0.0.0",
+    "@futuretea/postgres-mcp-server-linux-arm64": "0.0.0",
+    "@futuretea/postgres-mcp-server-windows-amd64": "0.0.0",
+    "@futuretea/postgres-mcp-server-windows-arm64": "0.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/futuretea/postgres-mcp-server.git"
+  },
+  "keywords": [
+    "mcp",
+    "postgresql",
+    "postgres",
+    "database",
+    "model-context-protocol"
+  ],
+  "author": {
+    "name": "futuretea",
+    "url": "https://github.com/futuretea"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/futuretea/postgres-mcp-server/issues"
+  },
+  "homepage": "https://github.com/futuretea/postgres-mcp-server#readme"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "@futuretea/postgres-mcp-server-linux-arm64",
+  "version": "0.0.0",
+  "description": "PostgreSQL MCP Server binary for linux/arm64",
+  "files": ["bin/postgres-mcp-server"],
+  "os": ["linux"],
+  "cpu": ["arm64"]
+}

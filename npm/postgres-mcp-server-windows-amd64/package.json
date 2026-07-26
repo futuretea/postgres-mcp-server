@@ -1,0 +1,8 @@
+{
+  "name": "@futuretea/postgres-mcp-server-windows-amd64",
+  "version": "0.0.0",
+  "description": "PostgreSQL MCP Server binary for windows/amd64",
+  "files": ["bin/postgres-mcp-server.exe"],
+  "os": ["win32"],
+  "cpu": ["x64"]
+}
