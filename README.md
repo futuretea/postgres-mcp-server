@@ -126,6 +126,44 @@ Use a bare `DATABASE_URL`, or standard PostgreSQL environment variables such as 
 
 At startup the server requires PostgreSQL 17 or newer and rejects service roles that are superusers, bypass row-level security, have replication, or belong to server-file, server-program, or backend-signalling roles. Use a dedicated, least-privilege database role.
 
+### Create a read-only service role
+
+Run the following in `psql` as a database administrator. Replace `app`, `public`, and `app_owner` with your database, schema, and object-owner role. This creates a fresh login role with no inherited privileges; do not reuse an administrator or application-owner role.
+
+```sql
+CREATE ROLE mcp_reader
+  LOGIN
+  NOSUPERUSER NOCREATEDB NOCREATEROLE
+  NOINHERIT NOREPLICATION NOBYPASSRLS;
+\password mcp_reader
+
+GRANT CONNECT ON DATABASE app TO mcp_reader;
+\connect app
+GRANT USAGE ON SCHEMA public TO mcp_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_reader;
+```
+
+The `\password` command prompts without placing the password in shell history. Store the resulting connection secret only in the runtime secret or environment manager, not in the repository. If the role must read tables created in the future, run this optional command as the role that creates those tables:
+
+```sql
+ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA public
+  GRANT SELECT ON TABLES TO mcp_reader;
+```
+
+Before configuring `DATABASE_URL`, connect as `mcp_reader` and verify that every boolean below is `false`:
+
+```sql
+SELECT current_user, rolsuper, rolbypassrls, rolreplication,
+  pg_has_role(current_user, 'pg_read_server_files', 'member') AS read_server_files,
+  pg_has_role(current_user, 'pg_write_server_files', 'member') AS write_server_files,
+  pg_has_role(current_user, 'pg_execute_server_program', 'member') AS execute_server_program,
+  pg_has_role(current_user, 'pg_signal_backend', 'member') AS signal_backend
+FROM pg_roles
+WHERE rolname = current_user;
+```
+
+If any value is `true`, use a new dedicated role rather than removing privileges from a shared administrator or application role.
+
 ## Read-only boundary and deployment risk
 
 Each database operation uses a PostgreSQL read-only transaction and pgx's extended execution protocol. `postgres_query` is parsed as exactly one SELECT, rejecting DML, DDL, row locks, SELECT INTO, modifying CTEs, and selected PostgreSQL built-ins with known side effects.

@@ -126,6 +126,44 @@ Streamable HTTP MCP 客户端使用 `http://127.0.0.1:8080/mcp`。服务也提�
 
 服务启动时要求 PostgreSQL 17 或更新版本，并拒绝 superuser、可绕过行级安全、具备复制权限，或属于服务端文件、服务端程序、后端信号角色的服务账号。请使用独立的最小权限数据库角色。
 
+### 创建只读服务角色
+
+使用数据库管理员账号在 `psql` 中执行下列命令。将 `app`、`public`、`app_owner` 替换成实际的数据库、schema 和对象 owner 角色。该命令会创建一个不继承权限的新登录角色；不要复用管理员或应用 owner 角色。
+
+```sql
+CREATE ROLE mcp_reader
+  LOGIN
+  NOSUPERUSER NOCREATEDB NOCREATEROLE
+  NOINHERIT NOREPLICATION NOBYPASSRLS;
+\password mcp_reader
+
+GRANT CONNECT ON DATABASE app TO mcp_reader;
+\connect app
+GRANT USAGE ON SCHEMA public TO mcp_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_reader;
+```
+
+`\password` 会交互式设置密码，不会把密码写入 shell 历史。连接密钥只应保存在运行环境的 secret 或环境变量管理器中，不能写入仓库。如果还需读取今后创建的表，由创建这些表的角色执行以下可选命令：
+
+```sql
+ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA public
+  GRANT SELECT ON TABLES TO mcp_reader;
+```
+
+设置 `DATABASE_URL` 前，请用 `mcp_reader` 连接，并确认下面每个布尔值都为 `false`：
+
+```sql
+SELECT current_user, rolsuper, rolbypassrls, rolreplication,
+  pg_has_role(current_user, 'pg_read_server_files', 'member') AS read_server_files,
+  pg_has_role(current_user, 'pg_write_server_files', 'member') AS write_server_files,
+  pg_has_role(current_user, 'pg_execute_server_program', 'member') AS execute_server_program,
+  pg_has_role(current_user, 'pg_signal_backend', 'member') AS signal_backend
+FROM pg_roles
+WHERE rolname = current_user;
+```
+
+若任一值为 `true`，请新建专用角色；不要为了 MCP 从共享管理员或应用角色中移除权限。
+
 ## 只读边界与部署风险
 
 每次数据库操作都在 PostgreSQL read-only transaction 和 pgx extended execution protocol 中执行。`postgres_query` 会解析为恰好一条 SELECT，并拒绝 DML、DDL、行锁、SELECT INTO、修改型 CTE 以及一组已知有副作用的 PostgreSQL 内建函数。
