@@ -1,5 +1,7 @@
 # PostgreSQL Read-only MCP Server
 
+[中文](README.zh.md)
+
 An MCP (Model Context Protocol) server for discovering one PostgreSQL 17+ instance and running a deliberately narrow SELECT subset. It exposes MCP over stdio or HTTP and includes a CLI.
 
 ## Quick start
