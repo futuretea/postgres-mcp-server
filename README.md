@@ -15,6 +15,97 @@ make build
 
 `tools list` and `tools describe` do not read database connection settings. Starting MCP/HTTP or calling a tool validates the connection and verifies the server and role before it reports ready.
 
+## Use a release
+
+Release `v0.0.1` is available as an npm package and a multi-architecture Docker image. Both release entry points start MCP over stdio by default.
+
+### npm
+
+Run the published package with `npx`:
+
+```sh
+export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
+npx -y @futuretea/postgres-mcp-server@0.0.1
+```
+
+For an MCP client configuration, use:
+
+```json
+{
+  "mcpServers": {
+    "postgres-readonly": {
+      "command": "npx",
+      "args": ["-y", "@futuretea/postgres-mcp-server@0.0.1"],
+      "env": {
+        "DATABASE_URL": "postgres://reader@127.0.0.1:5432/app?sslmode=disable"
+      }
+    }
+  }
+}
+```
+
+The npm command is an MCP entry point, not a wrapper for the server's other CLI subcommands. Pin the package version you intend to run.
+
+### Docker
+
+Run the published image directly:
+
+```sh
+export DATABASE_URL='postgres://reader@db.example.internal:5432/app?sslmode=require'
+docker run --rm -i \
+  --env DATABASE_URL \
+  ghcr.io/futuretea/postgres-mcp-server:v0.0.1
+```
+
+For an MCP client that launches Docker, pass the connection setting through the Docker process:
+
+```json
+{
+  "mcpServers": {
+    "postgres-readonly": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "--env",
+        "DATABASE_URL",
+        "ghcr.io/futuretea/postgres-mcp-server:v0.0.1"
+      ],
+      "env": {
+        "DATABASE_URL": "postgres://reader@db.example.internal:5432/app?sslmode=require"
+      }
+    }
+  }
+}
+```
+
+The database hostname must be reachable from the container. `localhost` inside the container is not the host machine; use a database hostname on the Docker network, or the platform-specific host gateway when appropriate.
+
+The Docker examples use `sslmode=require` for a remote database. Set the PostgreSQL TLS mode and certificates required by your deployment.
+
+### HTTP mode
+
+Pass MCP flags after the release command to start HTTP instead of stdio. On the host, the default listener is loopback:
+
+```sh
+export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
+npx -y @futuretea/postgres-mcp-server@0.0.1 --port 8080
+```
+
+For Docker, the server must listen on all container interfaces, while the published port can remain loopback-only on the host:
+
+```sh
+export DATABASE_URL='postgres://reader@db.example.internal:5432/app?sslmode=require'
+docker run --rm \
+  --env DATABASE_URL \
+  --publish 127.0.0.1:8080:8080 \
+  ghcr.io/futuretea/postgres-mcp-server:v0.0.1 \
+  --port 8080 --listen 0.0.0.0
+```
+
+Use `http://127.0.0.1:8080/mcp` for Streamable HTTP MCP clients. The server also provides SSE at `/sse` with messages at `/message`, and `GET /healthz` for health checks. HTTP has no authentication or TLS; keep it on a trusted network or place it behind infrastructure that provides both.
+
 ## Tools
 
 | Tool | Parameters | Purpose |
