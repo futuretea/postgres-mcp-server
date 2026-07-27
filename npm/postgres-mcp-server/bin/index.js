@@ -8,7 +8,6 @@ const BINARY_MAP = {
   linux_x64: {name: 'postgres-mcp-server-linux-amd64', suffix: ''},
   linux_arm64: {name: 'postgres-mcp-server-linux-arm64', suffix: ''},
   win32_x64: {name: 'postgres-mcp-server-windows-amd64', suffix: '.exe'},
-  win32_arm64: {name: 'postgres-mcp-server-windows-arm64', suffix: '.exe'},
 };
 
 const resolveBinaryPath = () => {

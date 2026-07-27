@@ -57,9 +57,6 @@ jobs:
           - runner: windows-latest
             goos: windows
             goarch: amd64
-          - runner: windows-11-arm
-            goos: windows
-            goarch: arm64
     needs: validate-tag
     runs-on: ${{ matrix.runner }}
     permissions:

@@ -14,8 +14,8 @@ NPM_PUBLISH_FLAGS ?= --access=public
 NPM_PACK_DIR ?= dist/npm-packages
 NPM ?= npm
 NODE ?= node
-NPM_OSES := darwin linux windows
-NPM_ARCHS := amd64 arm64
+NPM_UNIX_PLATFORMS := darwin-amd64 darwin-arm64 linux-amd64 linux-arm64
+NPM_WINDOWS_PLATFORMS := windows-amd64
 
 .PHONY: build build-platform test test-integration lint format tidy ci clean docker coverage npm-copy-platform npm-verify-binaries npm-prepare-packages npm-create-tarballs npm-publish
 
@@ -91,7 +91,13 @@ npm-copy-platform:
 	cp "$(OUTPUT)" "$(NPM_ROOT)/$(NPM_PACKAGE)-$(GOOS)-$(GOARCH)/bin/$(BINARY_NAME)$(if $(filter windows,$(GOOS)),.exe,)"
 
 npm-verify-binaries:
-	@set -eu; $(foreach os,$(NPM_OSES),$(foreach arch,$(NPM_ARCHS), $(if $(filter windows,$(os)),test -f "$(NPM_ROOT)/$(NPM_PACKAGE)-$(os)-$(arch)/bin/$(BINARY_NAME).exe";,test -x "$(NPM_ROOT)/$(NPM_PACKAGE)-$(os)-$(arch)/bin/$(BINARY_NAME)";)))
+	@set -eu; \
+		for platform in $(NPM_UNIX_PLATFORMS); do \
+			test -x "$(NPM_ROOT)/$(NPM_PACKAGE)-$$platform/bin/$(BINARY_NAME)"; \
+		done; \
+		for platform in $(NPM_WINDOWS_PLATFORMS); do \
+			test -f "$(NPM_ROOT)/$(NPM_PACKAGE)-$$platform/bin/$(BINARY_NAME).exe"; \
+		done
 
 npm-prepare-packages: npm-verify-binaries
 	test -f README.md

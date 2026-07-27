@@ -11,8 +11,7 @@
     "@futuretea/postgres-mcp-server-darwin-arm64": "0.0.0",
     "@futuretea/postgres-mcp-server-linux-amd64": "0.0.0",
     "@futuretea/postgres-mcp-server-linux-arm64": "0.0.0",
-    "@futuretea/postgres-mcp-server-windows-amd64": "0.0.0",
-    "@futuretea/postgres-mcp-server-windows-arm64": "0.0.0"
+    "@futuretea/postgres-mcp-server-windows-amd64": "0.0.0"
   },
   "repository": {
     "type": "git",
