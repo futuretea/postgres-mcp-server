@@ -128,7 +128,7 @@ At startup the server requires PostgreSQL 17 or newer and rejects service roles 
 
 ### Create a read-only service role
 
-Run the following in `psql` as a database administrator. Replace `app`, `public`, and `app_owner` with your database, schema, and object-owner role. This creates a fresh login role with no inherited privileges; do not reuse an administrator or application-owner role.
+Run the following in `psql` as a database administrator. Replace `app` and `public` with your database and schema. This creates a fresh login role with no inherited privileges; do not reuse an administrator or application-owner role.
 
 ```sql
 CREATE ROLE mcp_reader
@@ -143,10 +143,10 @@ GRANT USAGE ON SCHEMA public TO mcp_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_reader;
 ```
 
-The `\password` command prompts without placing the password in shell history. Store the resulting connection secret only in the runtime secret or environment manager, not in the repository. If the role must read tables created in the future, run this optional command as the role that creates those tables:
+The `\password` command prompts without placing the password in shell history. Store the resulting connection secret only in the runtime secret or environment manager, not in the repository. If the role must read tables created in the future and `postgres` creates those tables, run this optional command as `postgres`. Replace `postgres` with the actual object-creator role in other environments:
 
 ```sql
-ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA public
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT SELECT ON TABLES TO mcp_reader;
 ```
 

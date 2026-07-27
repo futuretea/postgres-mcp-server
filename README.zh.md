@@ -128,7 +128,7 @@ Streamable HTTP MCP 客户端使用 `http://127.0.0.1:8080/mcp`。服务也提�
 
 ### 创建只读服务角色
 
-使用数据库管理员账号在 `psql` 中执行下列命令。将 `app`、`public`、`app_owner` 替换成实际的数据库、schema 和对象 owner 角色。该命令会创建一个不继承权限的新登录角色；不要复用管理员或应用 owner 角色。
+使用数据库管理员账号在 `psql` 中执行下列命令。将 `app`、`public` 替换成实际的数据库和 schema。该命令会创建一个不继承权限的新登录角色；不要复用管理员或应用 owner 角色。
 
 ```sql
 CREATE ROLE mcp_reader
@@ -143,10 +143,10 @@ GRANT USAGE ON SCHEMA public TO mcp_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_reader;
 ```
 
-`\password` 会交互式设置密码，不会把密码写入 shell 历史。连接密钥只应保存在运行环境的 secret 或环境变量管理器中，不能写入仓库。如果还需读取今后创建的表，由创建这些表的角色执行以下可选命令：
+`\password` 会交互式设置密码，不会把密码写入 shell 历史。连接密钥只应保存在运行环境的 secret 或环境变量管理器中，不能写入仓库。如果还需读取今后创建的表，且由 `postgres` 创建这些表，请用 `postgres` 执行以下可选命令；其他环境请把 `postgres` 替换成实际的对象创建角色：
 
 ```sql
-ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA public
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT SELECT ON TABLES TO mcp_reader;
 ```
 
