@@ -52,12 +52,16 @@ func TestPostgres17FixtureServesReadOnlyDiscoveryAndQuery(t *testing.T) {
 	}
 	databases, err := service.ListDatabases(t.Context())
 	assertIntegrationObjectList(t, databases, err, "databases", "name", "app")
-	tables, err := service.ListTables(t.Context(), "inventory")
+	tables, err := service.ListTables(t.Context(), "public")
 	assertIntegrationObjectList(t, tables, err, "tables", "name", "widgets")
-	columns, err := service.DescribeTable(t.Context(), "inventory", "widgets")
+	columns, err := service.DescribeTable(t.Context(), "public", "widgets")
 	assertIntegrationColumns(t, columns, err)
-	indexes, err := service.ListIndexes(t.Context(), "inventory", "widgets")
+	indexes, err := service.ListIndexes(t.Context(), "public", "widgets")
 	assertIntegrationObjectList(t, indexes, err, "indexes", "name", "widgets_name_idx")
+	privileges, err := service.Query(t.Context(), "SELECT has_schema_privilege(current_user, 'public', 'CREATE') AS can_create_objects")
+	assertIntegrationQueryCell(t, privileges, err, "can_create_objects", "f")
+	widgetCount, err := service.Query(t.Context(), "SELECT count(*)::int AS widget_count FROM public.widgets")
+	assertIntegrationQueryCell(t, widgetCount, err, "widget_count", "0")
 
 	result, err := service.Query(t.Context(), "SELECT 1::int AS one, NULL::text AS empty")
 	if err != nil {
@@ -106,5 +110,20 @@ func assertIntegrationColumns(t *testing.T, data map[string]any, err error) {
 	}
 	if columns[0]["name"] != "id" || columns[0]["ordinal_position"] != 1 || columns[1]["name"] != "name" || columns[1]["nullable"] != false {
 		t.Fatalf("DescribeTable columns = %#v, want id/name contract", columns)
+	}
+}
+
+func assertIntegrationQueryCell(t *testing.T, data map[string]any, err error, column, want string) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("Query(): %v", err)
+	}
+	columns, ok := data["columns"].([]map[string]any)
+	if !ok || len(columns) != 1 || columns[0]["name"] != column {
+		t.Fatalf("Query() columns = %#v, want %q", data["columns"], column)
+	}
+	rows, ok := data["rows"].([][]any)
+	if !ok || len(rows) != 1 || len(rows[0]) != 1 || rows[0][0] != want {
+		t.Fatalf("Query() rows = %#v, want %q", data["rows"], want)
 	}
 }

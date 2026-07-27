@@ -143,6 +143,16 @@ GRANT USAGE ON SCHEMA public TO mcp_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_reader;
 ```
 
+### Verify effective schema privileges
+
+Before configuring `DATABASE_URL`, verify that `mcp_reader` cannot create objects in the target schema:
+
+```sql
+SELECT has_schema_privilege('mcp_reader', 'public', 'CREATE') AS can_create_objects;
+```
+
+The result must be `false`. A result of `true` means the role is not restricted to read access in that schema. This can occur when an installation upgraded from PostgreSQL 14 or earlier retains a shared `PUBLIC` `CREATE` grant on `public`. Do not revoke a shared `PUBLIC` privilege solely for this server; have the database administrator decide the database-wide schema policy first.
+
 The `\password` command prompts without placing the password in shell history. Store the resulting connection secret only in the runtime secret or environment manager, not in the repository. If the role must read tables created in the future and `postgres` creates those tables, run this optional command as `postgres`. Replace `postgres` with the actual object-creator role in other environments:
 
 ```sql

@@ -143,6 +143,16 @@ GRANT USAGE ON SCHEMA public TO mcp_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_reader;
 ```
 
+### 验证 schema 的有效权限
+
+设置 `DATABASE_URL` 前，请确认 `mcp_reader` 无法在目标 schema 中创建对象：
+
+```sql
+SELECT has_schema_privilege('mcp_reader', 'public', 'CREATE') AS can_create_objects;
+```
+
+结果必须为 `false`。若结果为 `true`，说明该角色在此 schema 中并非只读。若 PostgreSQL 14 或更早版本升级而来，`public` 可能保留共享的 `PUBLIC` `CREATE` 授权，从而出现此结果。不要只为该服务撤销共享的 `PUBLIC` 权限；应先由数据库管理员决定数据库级的 schema 策略。
+
 `\password` 会交互式设置密码，不会把密码写入 shell 历史。连接密钥只应保存在运行环境的 secret 或环境变量管理器中，不能写入仓库。如果还需读取今后创建的表，且由 `postgres` 创建这些表，请用 `postgres` 执行以下可选命令；其他环境请把 `postgres` 替换成实际的对象创建角色：
 
 ```sql

@@ -43,12 +43,12 @@ test-integration:
 			if [ "$$attempt" = 30 ]; then printf '%s\n' "PostgreSQL fixture did not become ready" >&2; exit 1; fi; \
 			sleep 1; \
 		done; \
-		docker exec "$$container" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'CREATE ROLE reader LOGIN'; \
-		docker exec "$$container" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'CREATE DATABASE app OWNER reader'; \
-		docker exec "$$container" psql -v ON_ERROR_STOP=1 -U postgres -d app -c 'CREATE SCHEMA inventory AUTHORIZATION reader; SET ROLE reader; CREATE TABLE inventory.widgets (id integer PRIMARY KEY, name text NOT NULL); CREATE INDEX widgets_name_idx ON inventory.widgets (name)'; \
+		docker exec "$$container" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'CREATE ROLE mcp_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS'; \
+		docker exec "$$container" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'CREATE DATABASE app'; \
+		docker exec "$$container" psql -v ON_ERROR_STOP=1 -U postgres -d app -c 'GRANT CONNECT ON DATABASE app TO mcp_reader; GRANT USAGE ON SCHEMA public TO mcp_reader; GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_reader; ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO mcp_reader; CREATE TABLE public.widgets (id integer PRIMARY KEY, name text NOT NULL); CREATE INDEX widgets_name_idx ON public.widgets (name)'; \
 		port="$$(docker port "$$container" 5432/tcp | sed -n '1s/.*://p')"; \
 		test -n "$$port"; \
-		POSTGRES_INTEGRATION_URL="postgres://reader@127.0.0.1:$$port/app?sslmode=disable" go test -tags=integration ./internal/postgres
+		POSTGRES_INTEGRATION_URL="postgres://mcp_reader@127.0.0.1:$$port/app?sslmode=disable" go test -tags=integration ./internal/postgres
 
 lint:
 	go vet ./...
