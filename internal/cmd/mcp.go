@@ -74,7 +74,7 @@ func runServer(ctx context.Context, cfgFile string, streams IOStreams, v *viper.
 	if err != nil {
 		return err
 	}
-	postgresService, err := postgres.NewService(ctx, executionConfig, nil)
+	postgresService, err := postgres.NewService(ctx, executionConfig, nil, cfg.AllowUnsafeDatabaseRole)
 	if err != nil {
 		return err
 	}

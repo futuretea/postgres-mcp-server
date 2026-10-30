@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog/log"
 
 	"github.com/futuretea/postgres-mcp-server/pkg/core/config"
 )
@@ -63,8 +64,9 @@ type Service struct {
 }
 
 // NewService creates a pool then verifies server version and service-role
-// safety before any tool can execute SQL.
-func NewService(ctx context.Context, executionConfig *config.PostgresExecutionConfig, factory PoolFactory) (*Service, error) {
+// safety before any tool can execute SQL. allowUnsafeDatabaseRole skips only
+// the service-role rejection; the server version check always runs.
+func NewService(ctx context.Context, executionConfig *config.PostgresExecutionConfig, factory PoolFactory, allowUnsafeDatabaseRole bool) (*Service, error) {
 	if executionConfig == nil || executionConfig.PoolConfig == nil {
 		return nil, connectionError()
 	}
@@ -78,7 +80,7 @@ func NewService(ctx context.Context, executionConfig *config.PostgresExecutionCo
 	}
 
 	service := &Service{pool: pool}
-	if err := service.verifyStartup(ctx); err != nil {
+	if err := service.verifyStartup(ctx, allowUnsafeDatabaseRole); err != nil {
 		service.Close()
 		return nil, err
 	}
@@ -93,7 +95,7 @@ func newPGXPool(ctx context.Context, executionConfig *config.PostgresExecutionCo
 	return pgxPool{Pool: pool}, nil
 }
 
-func (s *Service) verifyStartup(ctx context.Context) error {
+func (s *Service) verifyStartup(ctx context.Context, allowUnsafeDatabaseRole bool) error {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return connectionError()
@@ -126,6 +128,10 @@ func (s *Service) verifyStartup(ctx context.Context) error {
 		return connectionError()
 	}
 	if superuser || bypassRLS || replication || readFiles || writeFiles || executeProgram || signalBackend {
+		if allowUnsafeDatabaseRole {
+			log.Warn().Msg("database service role is not permitted; allow_unsafe_database_role is set, so the startup role check is skipped")
+			return nil
+		}
 		return postgresError("unsafe_service_role", "database service role is not permitted")
 	}
 	return nil

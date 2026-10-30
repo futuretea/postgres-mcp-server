@@ -8,3 +8,7 @@ enabled_tools: []
 disabled_tools: []
 enabled_domains: []
 disabled_domains: []
+# Skips only the startup database role check. Leave false unless you cannot
+# provision a least-privilege role; the read-only guarantee then rests on the
+# transaction boundary alone. Also readable as MCP_ALLOW_UNSAFE_DATABASE_ROLE.
+allow_unsafe_database_role: false

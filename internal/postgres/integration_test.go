@@ -25,7 +25,7 @@ func TestPostgres17FixtureServesReadOnlyDiscoveryAndQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadPostgresExecutionConfig(): %v", err)
 	}
-	service, err := NewService(t.Context(), executionConfig, nil)
+	service, err := NewService(t.Context(), executionConfig, nil, false)
 	if err != nil {
 		t.Fatalf("NewService(): %v", err)
 	}

@@ -128,7 +128,7 @@ func newToolsCallCommand(streams IOStreams, cfgFile *string, v *viper.Viper) *co
 			if err != nil {
 				return err
 			}
-			service, err := postgres.NewService(cmd.Context(), executionConfig, nil)
+			service, err := postgres.NewService(cmd.Context(), executionConfig, nil, cfg.AllowUnsafeDatabaseRole)
 			if err != nil {
 				return err
 			}

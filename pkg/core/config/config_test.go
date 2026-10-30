@@ -25,6 +25,30 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadConfigAllowUnsafeDatabaseRole(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string
+		want bool
+	}{
+		{name: "default", env: "", want: false},
+		{name: "enabled by environment", env: "true", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MCP_ALLOW_UNSAFE_DATABASE_ROLE", tt.env)
+			cfg, err := config.LoadConfig("", viper.New())
+			if err != nil {
+				t.Fatalf("LoadConfig: %v", err)
+			}
+			if cfg.AllowUnsafeDatabaseRole != tt.want {
+				t.Fatalf("AllowUnsafeDatabaseRole = %v, want %v", cfg.AllowUnsafeDatabaseRole, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string

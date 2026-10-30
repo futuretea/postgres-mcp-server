@@ -20,6 +20,8 @@ type StaticConfig struct {
 	DisabledTools   []string `mapstructure:"disabled_tools"`
 	EnabledDomains  []string `mapstructure:"enabled_domains"`
 	DisabledDomains []string `mapstructure:"disabled_domains"`
+
+	AllowUnsafeDatabaseRole bool `mapstructure:"allow_unsafe_database_role"`
 }
 
 // Validate checks whether the configuration can be used to start the server.
@@ -59,6 +61,8 @@ func LoadConfig(configPath string, v *viper.Viper) (*StaticConfig, error) {
 		"disabled_tools":   []string{},
 		"enabled_domains":  []string{},
 		"disabled_domains": []string{},
+
+		"allow_unsafe_database_role": false,
 	}
 	for key, value := range defaults {
 		v.SetDefault(key, value)

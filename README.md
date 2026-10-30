@@ -128,6 +128,8 @@ Use a bare `DATABASE_URL`, or standard PostgreSQL environment variables such as 
 
 At startup the server requires PostgreSQL 17 or newer and rejects service roles that are superusers, bypass row-level security, have replication, or belong to server-file, server-program, or backend-signalling roles. Use a dedicated, least-privilege database role.
 
+If you cannot provision such a role, set `allow_unsafe_database_role: true` (`MCP_ALLOW_UNSAFE_DATABASE_ROLE=true` for the environment) to skip only this role check. The server still wraps every statement in a read-only transaction, but the role-level guarantee is gone: a superuser role can read tables you did not intend to expose, read server files, and run server-side programs that a read-only transaction does not constrain, and a `BYPASSRLS` role sees through row-level security policies. Enable it only against a database you control.
+
 ### Create a read-only service role
 
 Run the following in `psql` as a database administrator. Replace `app` and `public` with your database and schema. This creates a fresh login role with no inherited privileges; do not reuse an administrator or application-owner role.

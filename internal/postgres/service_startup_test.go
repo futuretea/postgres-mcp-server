@@ -18,7 +18,7 @@ func TestNewServiceStartupUsesReadOnlyExtendedProtocolAndRollsBack(t *testing.T)
 		{values: []any{false, false, false, false, false, false, false}},
 	})
 
-	service, err := NewService(t.Context(), validExecutionConfig(t), fakePoolFactory(pool))
+	service, err := NewService(t.Context(), validExecutionConfig(t), fakePoolFactory(pool), false)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -97,7 +97,7 @@ func TestNewServiceRejectsUnsupportedOrUnsafeTargetBeforeToolSQL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pool := newFakePool(tt.rows)
-			service, err := NewService(t.Context(), validExecutionConfig(t), fakePoolFactory(pool))
+			service, err := NewService(t.Context(), validExecutionConfig(t), fakePoolFactory(pool), false)
 			if service != nil {
 				t.Fatalf("NewService() service = %#v, want nil on rejected startup", service)
 			}
@@ -117,20 +117,36 @@ func TestNewServiceRejectsUnsupportedOrUnsafeTargetBeforeToolSQL(t *testing.T) {
 	}
 }
 
+func TestNewServiceAllowsUnsafeServiceRoleOnlyWhenOptedIn(t *testing.T) {
+	pool := newFakePool([]fakeRow{
+		{values: []any{"170000"}},
+		{values: []any{true, false, false, false, false, false, false}},
+	})
+
+	service, err := NewService(t.Context(), validExecutionConfig(t), fakePoolFactory(pool), true)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if service == nil {
+		t.Fatal("NewService() service = nil, want initialized service when allowUnsafeDatabaseRole is set")
+	}
+	service.Close()
+}
+
 func TestNewServiceMapsFactoryAndProbeCausesToSafeErrors(t *testing.T) {
 	const marker = "POSTGRES_RAW_CAUSE_MARKER"
 	cfg := validExecutionConfig(t)
 
 	service, err := NewService(t.Context(), cfg, func(context.Context, *config.PostgresExecutionConfig) (Pool, error) {
 		return nil, errors.New(marker)
-	})
+	}, false)
 	if service != nil {
 		t.Fatalf("NewService() service = %#v, want nil when pool factory fails", service)
 	}
 	assertSafePostgresError(t, err, marker)
 
 	pool := newFakePool([]fakeRow{{err: errors.New(marker)}})
-	service, err = NewService(t.Context(), cfg, fakePoolFactory(pool))
+	service, err = NewService(t.Context(), cfg, fakePoolFactory(pool), false)
 	if service != nil {
 		t.Fatalf("NewService() service = %#v, want nil when version probe fails", service)
 	}
