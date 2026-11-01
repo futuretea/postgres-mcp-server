@@ -4,10 +4,15 @@
 
 ## 快速开始
 
-先为最小权限 PostgreSQL 角色设置连接目标，再构建并查看工具目录：
+先为最小权限 PostgreSQL 角色设置分字段连接配置，再构建并查看工具目录。这里的密码是普通环境变量值，不需要 URL 编码。
 
 ```sh
-export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
+export MCP_POSTGRES_HOST=127.0.0.1
+export MCP_POSTGRES_PORT=5432
+export MCP_POSTGRES_DATABASE=app
+export MCP_POSTGRES_USERNAME=reader
+export MCP_POSTGRES_PASSWORD='<runtime-secret>'
+export MCP_POSTGRES_SSLMODE=disable
 make build
 ./bin/postgres-mcp-server tools list
 ./bin/postgres-mcp-server mcp
@@ -24,7 +29,12 @@ make build
 用 `npx` 运行已发布的包：
 
 ```sh
-export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
+export MCP_POSTGRES_HOST=127.0.0.1
+export MCP_POSTGRES_PORT=5432
+export MCP_POSTGRES_DATABASE=app
+export MCP_POSTGRES_USERNAME=reader
+export MCP_POSTGRES_PASSWORD='<runtime-secret>'
+export MCP_POSTGRES_SSLMODE=disable
 npx -y @futuretea/postgres-mcp-server@0.0.1
 ```
 
@@ -37,7 +47,12 @@ MCP 客户端配置示例：
       "command": "npx",
       "args": ["-y", "@futuretea/postgres-mcp-server@0.0.1"],
       "env": {
-        "DATABASE_URL": "postgres://reader@127.0.0.1:5432/app?sslmode=disable"
+        "MCP_POSTGRES_HOST": "127.0.0.1",
+        "MCP_POSTGRES_PORT": "5432",
+        "MCP_POSTGRES_DATABASE": "app",
+        "MCP_POSTGRES_USERNAME": "reader",
+        "MCP_POSTGRES_PASSWORD": "<runtime-secret>",
+        "MCP_POSTGRES_SSLMODE": "disable"
       }
     }
   }
@@ -51,9 +66,19 @@ npm 命令是 MCP 入口，不是服务器其它 CLI 子命令的包装器。请
 直接运行已发布的镜像：
 
 ```sh
-export DATABASE_URL='postgres://reader@db.example.internal:5432/app?sslmode=require'
+export MCP_POSTGRES_HOST=db.example.internal
+export MCP_POSTGRES_PORT=5432
+export MCP_POSTGRES_DATABASE=app
+export MCP_POSTGRES_USERNAME=reader
+export MCP_POSTGRES_PASSWORD='<runtime-secret>'
+export MCP_POSTGRES_SSLMODE=require
 docker run --rm -i \
-  --env DATABASE_URL \
+  --env MCP_POSTGRES_HOST \
+  --env MCP_POSTGRES_PORT \
+  --env MCP_POSTGRES_DATABASE \
+  --env MCP_POSTGRES_USERNAME \
+  --env MCP_POSTGRES_PASSWORD \
+  --env MCP_POSTGRES_SSLMODE \
   ghcr.io/futuretea/postgres-mcp-server:v0.0.1
 ```
 
@@ -69,11 +94,26 @@ docker run --rm -i \
         "--rm",
         "-i",
         "--env",
-        "DATABASE_URL",
+        "MCP_POSTGRES_HOST",
+        "--env",
+        "MCP_POSTGRES_PORT",
+        "--env",
+        "MCP_POSTGRES_DATABASE",
+        "--env",
+        "MCP_POSTGRES_USERNAME",
+        "--env",
+        "MCP_POSTGRES_PASSWORD",
+        "--env",
+        "MCP_POSTGRES_SSLMODE",
         "ghcr.io/futuretea/postgres-mcp-server:v0.0.1"
       ],
       "env": {
-        "DATABASE_URL": "postgres://reader@db.example.internal:5432/app?sslmode=require"
+        "MCP_POSTGRES_HOST": "db.example.internal",
+        "MCP_POSTGRES_PORT": "5432",
+        "MCP_POSTGRES_DATABASE": "app",
+        "MCP_POSTGRES_USERNAME": "reader",
+        "MCP_POSTGRES_PASSWORD": "<runtime-secret>",
+        "MCP_POSTGRES_SSLMODE": "require"
       }
     }
   }
@@ -89,16 +129,31 @@ Docker 示例使用远程数据库时采用 `sslmode=require`。请按部署环�
 在发布命令后传入 MCP 参数，就会启动 HTTP 而不是 stdio。直接运行时默认监听 loopback：
 
 ```sh
-export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
+export MCP_POSTGRES_HOST=127.0.0.1
+export MCP_POSTGRES_PORT=5432
+export MCP_POSTGRES_DATABASE=app
+export MCP_POSTGRES_USERNAME=reader
+export MCP_POSTGRES_PASSWORD='<runtime-secret>'
+export MCP_POSTGRES_SSLMODE=disable
 npx -y @futuretea/postgres-mcp-server@0.0.1 --port 8080
 ```
 
 Docker 中服务必须监听容器的全部接口；宿主机发布端口仍可只绑定 loopback：
 
 ```sh
-export DATABASE_URL='postgres://reader@db.example.internal:5432/app?sslmode=require'
+export MCP_POSTGRES_HOST=db.example.internal
+export MCP_POSTGRES_PORT=5432
+export MCP_POSTGRES_DATABASE=app
+export MCP_POSTGRES_USERNAME=reader
+export MCP_POSTGRES_PASSWORD='<runtime-secret>'
+export MCP_POSTGRES_SSLMODE=require
 docker run --rm \
-  --env DATABASE_URL \
+  --env MCP_POSTGRES_HOST \
+  --env MCP_POSTGRES_PORT \
+  --env MCP_POSTGRES_DATABASE \
+  --env MCP_POSTGRES_USERNAME \
+  --env MCP_POSTGRES_PASSWORD \
+  --env MCP_POSTGRES_SSLMODE \
   --publish 127.0.0.1:8080:8080 \
   ghcr.io/futuretea/postgres-mcp-server:v0.0.1 \
   --port 8080 --listen 0.0.0.0
@@ -122,7 +177,34 @@ Streamable HTTP MCP 客户端使用 `http://127.0.0.1:8080/mcp`。服务也提�
 
 ## 数据库连接
 
-使用裸 `DATABASE_URL`，或者 PostgreSQL 标准环境变量：`PGHOST`、`PGPORT`、`PGDATABASE`、`PGUSER`、`PGPASSWORD`、`PGSSLMODE`。设置了 `DATABASE_URL` 时它优先。配置只能解析到一个 `host:port`；不同的 URL 目标或逗号分隔的 `PGHOST` 会在创建连接前失败。
+使用分字段环境变量。不要把主机、密码或连接 URL 写进 YAML。这样设置的密码是原始环境变量值，不需要 URL 编码。
+
+| 变量 | libpq 别名 | 是否必填 | 默认值 |
+|---|---|---|---|
+| `MCP_POSTGRES_HOST` | `PGHOST` | 是 | 无 |
+| `MCP_POSTGRES_PORT` | `PGPORT` | 否 | `5432` |
+| `MCP_POSTGRES_DATABASE` | `PGDATABASE` | 是 | 无 |
+| `MCP_POSTGRES_USERNAME` | `PGUSER` | 是 | 无 |
+| `MCP_POSTGRES_PASSWORD` | `PGPASSWORD` | 否 | 空 |
+| `MCP_POSTGRES_SSLMODE` | `PGSSLMODE` | 否 | `prefer` |
+
+`MCP_POSTGRES_*` 与本服务已有的 `MCP_` 环境变量前缀一致，也与 ClickHouse 服务的 `MCP_CLICKHOUSE_*` 连接字段一致（`MCP_CLICKHOUSE_DATABASE`、`MCP_CLICKHOUSE_USERNAME`、`MCP_CLICKHOUSE_PASSWORD`）。MySQL 使用 `MYSQL_MCP_*`，是因为该仓库把包括 HTTP 端口在内的每个变量都放在 `MYSQL_MCP_` 前缀下。`MCP_POSTGRES_PORT` 是数据库端口，HTTP 端口仍是 `MCP_PORT`。
+
+每个 `MCP_POSTGRES_*` 变量都是同一行 `PG*` 变量的别名。同一对变量被设成不同的值时，启动失败。错误会写出这两个变量名，但不会打印变量值。`MCP_POSTGRES_*` 是显式连接参数，会覆盖 `PGSERVICE` 中的同名字段。未设置对应的 `MCP_POSTGRES_*` 时，service 文件仍会覆盖 `PG*`，这是 pgx 现有的 libpq 行为。
+
+`PGSERVICE` 可以从 PostgreSQL service 文件提供必填字段。未使用 `DATABASE_URL` 或 `PGSERVICE` 时，host、database、username 必填。缺少必填字段时，错误会列出缺失的变量，例如 `[postgres_invalid_config] missing MCP_POSTGRES_HOST or PGHOST, MCP_POSTGRES_DATABASE or PGDATABASE, MCP_POSTGRES_USERNAME or PGUSER`。
+
+配置只能解析到一个 `host:port`。不同的 URL 目标或逗号分隔的主机会在创建连接前失败。
+
+### `DATABASE_URL`（可选）
+
+`DATABASE_URL` 仍是已有 libpq URL 的高级入口。设置了它时，该 URL 就是连接串，所有 `MCP_POSTGRES_*` 变量都会被忽略。标准 `PG*` 变量仍会补上 URL 里没有的设置；URL 中已有的设置覆盖同名 `PG*` 变量。要使用上面的分字段，请不要设置 `DATABASE_URL`。
+
+```sh
+export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
+```
+
+`DATABASE_URL` 中的密码必须做 URL 编码。密码含有保留字符时，请使用 `MCP_POSTGRES_PASSWORD`。
 
 服务启动时要求 PostgreSQL 17 或更新版本，并拒绝 superuser、可绕过行级安全、具备复制权限，或属于服务端文件、服务端程序、后端信号角色的服务账号。请使用独立的最小权限数据库角色。
 
@@ -147,7 +229,7 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_reader;
 
 ### 验证 schema 的有效权限
 
-设置 `DATABASE_URL` 前，请确认 `mcp_reader` 无法在目标 schema 中创建对象：
+配置连接前，请确认 `mcp_reader` 无法在目标 schema 中创建对象：
 
 ```sql
 SELECT has_schema_privilege('mcp_reader', 'public', 'CREATE') AS can_create_objects;
@@ -162,7 +244,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT SELECT ON TABLES TO mcp_reader;
 ```
 
-设置 `DATABASE_URL` 前，请用 `mcp_reader` 连接，并确认下面每个布尔值都为 `false`：
+配置连接前，请用 `mcp_reader` 连接，并确认下面每个布尔值都为 `false`：
 
 ```sql
 SELECT current_user, rolsuper, rolbypassrls, rolreplication,
@@ -215,7 +297,14 @@ HTTP 健康检查为 `GET /healthz`。transport 和工具过滤配置见 `config
 
 ```sh
 make docker
-docker run --rm -i --env DATABASE_URL postgres-mcp-server:dev
+docker run --rm -i \
+  --env MCP_POSTGRES_HOST \
+  --env MCP_POSTGRES_PORT \
+  --env MCP_POSTGRES_DATABASE \
+  --env MCP_POSTGRES_USERNAME \
+  --env MCP_POSTGRES_PASSWORD \
+  --env MCP_POSTGRES_SSLMODE \
+  postgres-mcp-server:dev
 ```
 
 镜像入口是 `postgres-mcp-server mcp`。
