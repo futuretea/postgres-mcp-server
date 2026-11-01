@@ -31,8 +31,8 @@ type postgresEnvField struct {
 
 // resolvedPostgresField is one discrete setting after alias resolution.
 // An explicit MCP_POSTGRES_* value is later passed as a connection
-// parameter. The PG* alias is left in the environment for pgx unless it
-// disagrees with the MCP variable.
+// parameter. The PG* alias stays in the environment for pgx. Disagreement
+// fails configuration before a connection string is built.
 type resolvedPostgresField struct {
 	spec     postgresEnvField
 	mcpValue string
@@ -153,7 +153,8 @@ func missingPostgresFields(names []string) error {
 // discreteKeywordString passes explicit MCP_POSTGRES_* values to pgx.
 // PG* aliases stay in the environment so a service file can still override
 // them. Values are quoted so a password does not need URL encoding and
-// cannot be read as another keyword.
+// cannot be read as another keyword. Quoting copies raw bytes; a password
+// is not required to be valid UTF-8.
 func discreteKeywordString(fields []resolvedPostgresField) string {
 	var builder strings.Builder
 	for _, field := range fields {
@@ -174,11 +175,11 @@ func quotePostgresKeyword(value string) string {
 	var builder strings.Builder
 	builder.Grow(len(value) + 2)
 	builder.WriteByte('\'')
-	for _, r := range value {
-		if r == '\\' || r == '\'' {
+	for i := 0; i < len(value); i++ {
+		if value[i] == '\\' || value[i] == '\'' {
 			builder.WriteByte('\\')
 		}
-		builder.WriteRune(r)
+		builder.WriteByte(value[i])
 	}
 	builder.WriteByte('\'')
 	return builder.String()

@@ -30,6 +30,7 @@ func TestLoadPostgresExecutionConfig(t *testing.T) {
 	const (
 		specialPassword = "p@ss:/?# w'or\\d host=evil"
 		mcpPassword     = "MCP_PASSWORD_SHOULD_BE_IGNORED"
+		rawPassword     = "a\xffb'\\c host=evil"
 	)
 
 	tests := []struct {
@@ -106,6 +107,20 @@ func TestLoadPostgresExecutionConfig(t *testing.T) {
 			wantUser:        "mcp-reader",
 			checkPassword:   true,
 			wantPassword:    specialPassword,
+			wantTLSDisabled: true,
+		},
+		{
+			name:            "MCP password preserves non-UTF-8 bytes",
+			mcpHost:         "mcp-primary",
+			mcpDatabase:     "mcp-app",
+			mcpUsername:     "mcp-reader",
+			mcpPassword:     rawPassword,
+			mcpSSLMode:      "disable",
+			wantHost:        "mcp-primary",
+			wantDatabase:    "mcp-app",
+			wantUser:        "mcp-reader",
+			checkPassword:   true,
+			wantPassword:    rawPassword,
 			wantTLSDisabled: true,
 		},
 		{
@@ -337,6 +352,7 @@ func TestLoadPostgresExecutionConfig(t *testing.T) {
 				"STATIC_CONFIG_MARKER",
 				specialPassword,
 				mcpPassword,
+				rawPassword,
 				"from-pg",
 				"from-url",
 			} {
