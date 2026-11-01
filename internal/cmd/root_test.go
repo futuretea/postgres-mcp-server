@@ -45,6 +45,8 @@ func TestRootWithoutArgsShowsHelp(t *testing.T) {
 func TestToolsCatalogIsPostgresAndDoesNotNeedExecutionConfig(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://reader:CATALOG_ONLY_MARKER@%zz")
 	t.Setenv("PGHOST", "one-target,another-target")
+	t.Setenv("MCP_POSTGRES_HOST", "catalog-must-not-connect")
+	t.Setenv("MCP_POSTGRES_PASSWORD", "CATALOG_ONLY_MARKER")
 
 	var out bytes.Buffer
 	root := cmd.NewRootCommand(cmd.IOStreams{Out: &out, ErrOut: &out})
