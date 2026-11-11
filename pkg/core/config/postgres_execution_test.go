@@ -451,7 +451,9 @@ func setPostgresEnv(t *testing.T, key, value string) {
 	t.Helper()
 	if value == "" {
 		t.Setenv(key, "unset")
-		os.Unsetenv(key)
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("unset %s: %v", key, err)
+		}
 		return
 	}
 	t.Setenv(key, value)
