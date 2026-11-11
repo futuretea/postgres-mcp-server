@@ -31,33 +31,37 @@ func TestLoadPostgresExecutionConfig(t *testing.T) {
 		specialPassword = "p@ss:/?# w'or\\d host=evil"
 		mcpPassword     = "MCP_PASSWORD_SHOULD_BE_IGNORED"
 		rawPassword     = "a\xffb'\\c host=evil"
+		rawURLPassword  = "a\xffb"
+		utf8PasswordErr = "[postgres_invalid_config] password must be valid UTF-8"
 	)
 
 	tests := []struct {
-		name            string
-		databaseURL     string
-		pgHost          string
-		pgPort          string
-		pgDatabase      string
-		pgUser          string
-		pgPassword      string
-		pgSSLMode       string
-		pgService       string
-		serviceFile     string
-		mcpHost         string
-		mcpPort         string
-		mcpDatabase     string
-		mcpUsername     string
-		mcpPassword     string
-		mcpSSLMode      string
-		wantHost        string
-		wantPort        uint16
-		wantDatabase    string
-		wantUser        string
-		checkPassword   bool
-		wantPassword    string
-		wantTLSDisabled bool
-		wantErr         string
+		name                     string
+		databaseURL              string
+		pgHost                   string
+		pgPort                   string
+		pgDatabase               string
+		pgUser                   string
+		pgPassword               string
+		pgSSLMode                string
+		pgService                string
+		serviceFile              string
+		mcpHost                  string
+		mcpPort                  string
+		mcpDatabase              string
+		mcpUsername              string
+		mcpPassword              string
+		mcpPasswordExplicitEmpty bool
+		mcpSSLMode               string
+		pgpass                   string
+		wantHost                 string
+		wantPort                 uint16
+		wantDatabase             string
+		wantUser                 string
+		checkPassword            bool
+		wantPassword             string
+		wantTLSDisabled          bool
+		wantErr                  string
 	}{
 		{
 			name:            "bare DATABASE_URL takes precedence over standard environment and MCP fields",
@@ -110,18 +114,35 @@ func TestLoadPostgresExecutionConfig(t *testing.T) {
 			wantTLSDisabled: true,
 		},
 		{
-			name:            "MCP password preserves non-UTF-8 bytes",
-			mcpHost:         "mcp-primary",
-			mcpDatabase:     "mcp-app",
-			mcpUsername:     "mcp-reader",
-			mcpPassword:     rawPassword,
-			mcpSSLMode:      "disable",
-			wantHost:        "mcp-primary",
-			wantDatabase:    "mcp-app",
-			wantUser:        "mcp-reader",
-			checkPassword:   true,
-			wantPassword:    rawPassword,
-			wantTLSDisabled: true,
+			name:        "MCP password that is not valid UTF-8 is rejected without leaking it",
+			mcpHost:     "mcp-primary",
+			mcpDatabase: "mcp-app",
+			mcpUsername: "mcp-reader",
+			mcpPassword: rawPassword,
+			mcpSSLMode:  "disable",
+			wantErr:     utf8PasswordErr,
+		},
+		{
+			name:       "PG password that is not valid UTF-8 is rejected without leaking it",
+			pgHost:     "env-primary",
+			pgDatabase: "app",
+			pgUser:     "reader",
+			pgPassword: rawPassword,
+			wantErr:    utf8PasswordErr,
+		},
+		{
+			name:        "DATABASE_URL password that is not valid UTF-8 is rejected without leaking it",
+			databaseURL: "postgres://reader:" + rawURLPassword + "@url-primary:5432/app?sslmode=disable",
+			wantErr:     utf8PasswordErr,
+		},
+		{
+			name:       "pgpass password that is not valid UTF-8 is rejected without leaking it",
+			pgHost:     "db.example",
+			pgPort:     "5432",
+			pgDatabase: "app",
+			pgUser:     "reader",
+			pgpass:     "db.example:5432:app:reader:" + rawURLPassword + "\n",
+			wantErr:    utf8PasswordErr,
 		},
 		{
 			name:          "trimmed MCP host is used",
@@ -286,6 +307,52 @@ func TestLoadPostgresExecutionConfig(t *testing.T) {
 			pgDatabase: "app",
 			wantErr:    "[postgres_invalid_config] missing MCP_POSTGRES_USERNAME or PGUSER",
 		},
+		{
+			name:    "partial PG environment does not use libpq user or database defaults",
+			pgHost:  "env-primary",
+			pgUser:  "reader",
+			wantErr: "[postgres_invalid_config] missing MCP_POSTGRES_DATABASE or PGDATABASE",
+		},
+		{
+			name:                     "explicit empty MCP password overrides pgpass",
+			mcpHost:                  "db.example",
+			mcpDatabase:              "app",
+			mcpUsername:              "reader",
+			mcpSSLMode:               "disable",
+			mcpPasswordExplicitEmpty: true,
+			pgpass:                   "db.example:5432:app:reader:from-pgpass\n",
+			wantHost:                 "db.example",
+			checkPassword:            true,
+			wantPassword:             "",
+		},
+		{
+			name:                     "explicit empty MCP password disagrees with PGPASSWORD without leaking it",
+			mcpHost:                  "db.example",
+			mcpDatabase:              "app",
+			mcpUsername:              "reader",
+			pgPassword:               "from-pgpass-secret",
+			mcpPasswordExplicitEmpty: true,
+			wantErr:                  "[postgres_invalid_config] MCP_POSTGRES_PASSWORD and PGPASSWORD disagree",
+		},
+		{
+			name:          "unset MCP password still uses pgpass",
+			mcpHost:       "db.example",
+			mcpDatabase:   "app",
+			mcpUsername:   "reader",
+			mcpSSLMode:    "disable",
+			pgpass:        "db.example:5432:app:reader:from-pgpass\n",
+			checkPassword: true,
+			wantPassword:  "from-pgpass",
+		},
+		{
+			name:          "empty PGPASSWORD stays unset so pgpass still applies",
+			pgHost:        "db.example",
+			pgDatabase:    "app",
+			pgUser:        "reader",
+			pgpass:        "db.example:5432:app:reader:from-pgpass\n",
+			checkPassword: true,
+			wantPassword:  "from-pgpass",
+		},
 	}
 
 	for _, tt := range tests {
@@ -303,12 +370,20 @@ func TestLoadPostgresExecutionConfig(t *testing.T) {
 			setPostgresEnv(t, "MCP_POSTGRES_DATABASE", tt.mcpDatabase)
 			setPostgresEnv(t, "MCP_POSTGRES_USERNAME", tt.mcpUsername)
 			setPostgresEnv(t, "MCP_POSTGRES_PASSWORD", tt.mcpPassword)
+			if tt.mcpPasswordExplicitEmpty {
+				t.Setenv("MCP_POSTGRES_PASSWORD", "")
+			}
 			setPostgresEnv(t, "MCP_POSTGRES_SSLMODE", tt.mcpSSLMode)
 			serviceFile := ""
 			if tt.serviceFile != "" {
 				serviceFile = writeServiceFile(t, tt.serviceFile)
 			}
 			setPostgresEnv(t, "PGSERVICEFILE", serviceFile)
+			pgpassFile := ""
+			if tt.pgpass != "" {
+				pgpassFile = writeSecretFile(t, "pgpass", tt.pgpass)
+			}
+			setPostgresEnv(t, "PGPASSFILE", pgpassFile)
 
 			cfg, err := config.LoadPostgresExecutionConfig()
 			if tt.wantErr == "" {
@@ -353,8 +428,11 @@ func TestLoadPostgresExecutionConfig(t *testing.T) {
 				specialPassword,
 				mcpPassword,
 				rawPassword,
+				rawURLPassword,
 				"from-pg",
 				"from-url",
+				"from-pgpass",
+				"\ufffd",
 			} {
 				if strings.Contains(err.Error(), marker) {
 					t.Fatalf("safe configuration error leaked marker %q: %q", marker, err)
@@ -366,14 +444,24 @@ func TestLoadPostgresExecutionConfig(t *testing.T) {
 
 func setPostgresEnv(t *testing.T, key, value string) {
 	t.Helper()
+	if value == "" {
+		t.Setenv(key, "unset")
+		os.Unsetenv(key)
+		return
+	}
 	t.Setenv(key, value)
 }
 
 func writeServiceFile(t *testing.T, contents string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "pg_service.conf")
+	return writeSecretFile(t, "pg_service.conf", contents)
+}
+
+func writeSecretFile(t *testing.T, name, contents string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatalf("write service file: %v", err)
+		t.Fatalf("write %s: %v", name, err)
 	}
 	return path
 }
