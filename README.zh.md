@@ -4,7 +4,7 @@
 
 ## 快速开始
 
-先为最小权限 PostgreSQL 角色设置分字段连接配置，再构建并查看工具目录。这里的密码是普通环境变量值，不需要 URL 编码。
+先为最小权限 PostgreSQL 角色设置分字段连接配置，再构建并查看工具目录。有效 UTF-8 密码是普通环境变量值，不需要 URL 编码。不是有效 UTF-8 的密码会在连接前被拒绝，错误信息不会包含密码。
 
 ```sh
 export MCP_POSTGRES_HOST=127.0.0.1
@@ -29,12 +29,7 @@ make build
 用 `npx` 运行已发布的包：
 
 ```sh
-export MCP_POSTGRES_HOST=127.0.0.1
-export MCP_POSTGRES_PORT=5432
-export MCP_POSTGRES_DATABASE=app
-export MCP_POSTGRES_USERNAME=reader
-export MCP_POSTGRES_PASSWORD='<runtime-secret>'
-export MCP_POSTGRES_SSLMODE=disable
+export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
 npx -y @futuretea/postgres-mcp-server@0.0.1
 ```
 
@@ -47,12 +42,7 @@ MCP 客户端配置示例：
       "command": "npx",
       "args": ["-y", "@futuretea/postgres-mcp-server@0.0.1"],
       "env": {
-        "MCP_POSTGRES_HOST": "127.0.0.1",
-        "MCP_POSTGRES_PORT": "5432",
-        "MCP_POSTGRES_DATABASE": "app",
-        "MCP_POSTGRES_USERNAME": "reader",
-        "MCP_POSTGRES_PASSWORD": "<runtime-secret>",
-        "MCP_POSTGRES_SSLMODE": "disable"
+        "DATABASE_URL": "postgres://reader@127.0.0.1:5432/app?sslmode=disable"
       }
     }
   }
@@ -66,19 +56,9 @@ npm 命令是 MCP 入口，不是服务器其它 CLI 子命令的包装器。请
 直接运行已发布的镜像：
 
 ```sh
-export MCP_POSTGRES_HOST=db.example.internal
-export MCP_POSTGRES_PORT=5432
-export MCP_POSTGRES_DATABASE=app
-export MCP_POSTGRES_USERNAME=reader
-export MCP_POSTGRES_PASSWORD='<runtime-secret>'
-export MCP_POSTGRES_SSLMODE=require
+export DATABASE_URL='postgres://reader@db.example.internal:5432/app?sslmode=require'
 docker run --rm -i \
-  --env MCP_POSTGRES_HOST \
-  --env MCP_POSTGRES_PORT \
-  --env MCP_POSTGRES_DATABASE \
-  --env MCP_POSTGRES_USERNAME \
-  --env MCP_POSTGRES_PASSWORD \
-  --env MCP_POSTGRES_SSLMODE \
+  --env DATABASE_URL \
   ghcr.io/futuretea/postgres-mcp-server:v0.0.1
 ```
 
@@ -94,26 +74,11 @@ docker run --rm -i \
         "--rm",
         "-i",
         "--env",
-        "MCP_POSTGRES_HOST",
-        "--env",
-        "MCP_POSTGRES_PORT",
-        "--env",
-        "MCP_POSTGRES_DATABASE",
-        "--env",
-        "MCP_POSTGRES_USERNAME",
-        "--env",
-        "MCP_POSTGRES_PASSWORD",
-        "--env",
-        "MCP_POSTGRES_SSLMODE",
+        "DATABASE_URL",
         "ghcr.io/futuretea/postgres-mcp-server:v0.0.1"
       ],
       "env": {
-        "MCP_POSTGRES_HOST": "db.example.internal",
-        "MCP_POSTGRES_PORT": "5432",
-        "MCP_POSTGRES_DATABASE": "app",
-        "MCP_POSTGRES_USERNAME": "reader",
-        "MCP_POSTGRES_PASSWORD": "<runtime-secret>",
-        "MCP_POSTGRES_SSLMODE": "require"
+        "DATABASE_URL": "postgres://reader@db.example.internal:5432/app?sslmode=require"
       }
     }
   }
@@ -129,31 +94,16 @@ Docker 示例使用远程数据库时采用 `sslmode=require`。请按部署环�
 在发布命令后传入 MCP 参数，就会启动 HTTP 而不是 stdio。直接运行时默认监听 loopback：
 
 ```sh
-export MCP_POSTGRES_HOST=127.0.0.1
-export MCP_POSTGRES_PORT=5432
-export MCP_POSTGRES_DATABASE=app
-export MCP_POSTGRES_USERNAME=reader
-export MCP_POSTGRES_PASSWORD='<runtime-secret>'
-export MCP_POSTGRES_SSLMODE=disable
+export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
 npx -y @futuretea/postgres-mcp-server@0.0.1 --port 8080
 ```
 
 Docker 中服务必须监听容器的全部接口；宿主机发布端口仍可只绑定 loopback：
 
 ```sh
-export MCP_POSTGRES_HOST=db.example.internal
-export MCP_POSTGRES_PORT=5432
-export MCP_POSTGRES_DATABASE=app
-export MCP_POSTGRES_USERNAME=reader
-export MCP_POSTGRES_PASSWORD='<runtime-secret>'
-export MCP_POSTGRES_SSLMODE=require
+export DATABASE_URL='postgres://reader@db.example.internal:5432/app?sslmode=require'
 docker run --rm \
-  --env MCP_POSTGRES_HOST \
-  --env MCP_POSTGRES_PORT \
-  --env MCP_POSTGRES_DATABASE \
-  --env MCP_POSTGRES_USERNAME \
-  --env MCP_POSTGRES_PASSWORD \
-  --env MCP_POSTGRES_SSLMODE \
+  --env DATABASE_URL \
   --publish 127.0.0.1:8080:8080 \
   ghcr.io/futuretea/postgres-mcp-server:v0.0.1 \
   --port 8080 --listen 0.0.0.0
@@ -177,9 +127,9 @@ Streamable HTTP MCP 客户端使用 `http://127.0.0.1:8080/mcp`。服务也提�
 
 ## 数据库连接
 
-使用分字段环境变量。不要把主机、密码或连接 URL 写进 YAML。这样设置的密码是原始环境变量值，不需要 URL 编码。
+使用分字段环境变量。不要把主机、密码或连接 URL 写进 YAML。有效 UTF-8 密码不需要 URL 编码。
 
-| 变量 | libpq 别名 | 是否必填 | 默认值 |
+| 变量 | libpq 别名 | 未设置 `DATABASE_URL` 或 `PGSERVICE` 时是否必填 | 默认值 |
 |---|---|---|---|
 | `MCP_POSTGRES_HOST` | `PGHOST` | 是 | 无 |
 | `MCP_POSTGRES_PORT` | `PGPORT` | 否 | `5432` |
@@ -192,7 +142,11 @@ Streamable HTTP MCP 客户端使用 `http://127.0.0.1:8080/mcp`。服务也提�
 
 每个 `MCP_POSTGRES_*` 变量都是同一行 `PG*` 变量的别名。同一对变量被设成不同的值时，启动失败。错误会写出这两个变量名，但不会打印变量值。`MCP_POSTGRES_*` 是显式连接参数，会覆盖 `PGSERVICE` 中的同名字段。未设置对应的 `MCP_POSTGRES_*` 时，service 文件仍会覆盖 `PG*`，这是 pgx 现有的 libpq 行为。
 
-`PGSERVICE` 可以从 PostgreSQL service 文件提供必填字段。未使用 `DATABASE_URL` 或 `PGSERVICE` 时，host、database、username 必填。缺少必填字段时，错误会列出缺失的变量，例如 `[postgres_invalid_config] missing MCP_POSTGRES_HOST or PGHOST, MCP_POSTGRES_DATABASE or PGDATABASE, MCP_POSTGRES_USERNAME or PGUSER`。
+未设置 `MCP_POSTGRES_PASSWORD` 时，仍使用 `PGPASSWORD` 和 `.pgpass`。空的 `PGPASSWORD` 视为未设置，与 libpq 一致。把 `MCP_POSTGRES_PASSWORD` 设成空字符串是显式空密码：它覆盖 `PGPASSWORD` 和 `.pgpass`。这个空值与非空 `PGPASSWORD` 同时存在时，启动失败，错误只写出这两个变量名，不打印值。
+
+最终解析出的密码必须是有效 UTF-8。这包括 `MCP_POSTGRES_PASSWORD`、`PGPASSWORD`、`DATABASE_URL` 中的密码、service 文件密码和 `.pgpass` 密码。无效 UTF-8 会以 `[postgres_invalid_config] password must be valid UTF-8` 失败，且不会打印密码。连接配置里保留原始字节并不等于认证成功：pgx 的 SCRAM 准备会把这些字节替换成 U+FFFD，从而发送另一个密码。
+
+`PGSERVICE` 可以从 PostgreSQL service 文件提供必填字段。未使用 `DATABASE_URL` 或 `PGSERVICE` 时，host、database、username 必填。这三个字段不使用 libpq 的默认值，因此缺少其中一项的部分 `PG*` 配置会失败。缺少必填字段时，错误会列出缺失的变量，例如 `[postgres_invalid_config] missing MCP_POSTGRES_HOST or PGHOST, MCP_POSTGRES_DATABASE or PGDATABASE, MCP_POSTGRES_USERNAME or PGUSER`。
 
 配置只能解析到一个 `host:port`。不同的 URL 目标或逗号分隔的主机会在创建连接前失败。
 

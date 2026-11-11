@@ -136,6 +136,11 @@ func TestLoadPostgresExecutionConfig(t *testing.T) {
 			wantErr:     utf8PasswordErr,
 		},
 		{
+			name:        "percent-encoded DATABASE_URL password that is not valid UTF-8 is rejected without leaking it",
+			databaseURL: "postgres://reader:a%FFb@url-primary:5432/app?sslmode=disable",
+			wantErr:     utf8PasswordErr,
+		},
+		{
 			name:       "pgpass password that is not valid UTF-8 is rejected without leaking it",
 			pgHost:     "db.example",
 			pgPort:     "5432",

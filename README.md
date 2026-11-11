@@ -6,7 +6,7 @@ An MCP (Model Context Protocol) server for discovering one PostgreSQL 17+ instan
 
 ## Quick start
 
-Set discrete connection fields for a minimally privileged PostgreSQL role, then build and inspect the catalog. A password is a normal environment value here; it does not need URL encoding.
+Set discrete connection fields for a minimally privileged PostgreSQL role, then build and inspect the catalog. A valid UTF-8 password is a normal environment value here and does not need URL encoding. A password that is not valid UTF-8 is rejected before connect, and the error does not include the password.
 
 ```sh
 export MCP_POSTGRES_HOST=127.0.0.1
@@ -31,12 +31,7 @@ Release `v0.0.1` is available as an npm package and a multi-architecture Docker 
 Run the published package with `npx`:
 
 ```sh
-export MCP_POSTGRES_HOST=127.0.0.1
-export MCP_POSTGRES_PORT=5432
-export MCP_POSTGRES_DATABASE=app
-export MCP_POSTGRES_USERNAME=reader
-export MCP_POSTGRES_PASSWORD='<runtime-secret>'
-export MCP_POSTGRES_SSLMODE=disable
+export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
 npx -y @futuretea/postgres-mcp-server@0.0.1
 ```
 
@@ -49,12 +44,7 @@ For an MCP client configuration, use:
       "command": "npx",
       "args": ["-y", "@futuretea/postgres-mcp-server@0.0.1"],
       "env": {
-        "MCP_POSTGRES_HOST": "127.0.0.1",
-        "MCP_POSTGRES_PORT": "5432",
-        "MCP_POSTGRES_DATABASE": "app",
-        "MCP_POSTGRES_USERNAME": "reader",
-        "MCP_POSTGRES_PASSWORD": "<runtime-secret>",
-        "MCP_POSTGRES_SSLMODE": "disable"
+        "DATABASE_URL": "postgres://reader@127.0.0.1:5432/app?sslmode=disable"
       }
     }
   }
@@ -68,19 +58,9 @@ The npm command is an MCP entry point, not a wrapper for the server's other CLI 
 Run the published image directly:
 
 ```sh
-export MCP_POSTGRES_HOST=db.example.internal
-export MCP_POSTGRES_PORT=5432
-export MCP_POSTGRES_DATABASE=app
-export MCP_POSTGRES_USERNAME=reader
-export MCP_POSTGRES_PASSWORD='<runtime-secret>'
-export MCP_POSTGRES_SSLMODE=require
+export DATABASE_URL='postgres://reader@db.example.internal:5432/app?sslmode=require'
 docker run --rm -i \
-  --env MCP_POSTGRES_HOST \
-  --env MCP_POSTGRES_PORT \
-  --env MCP_POSTGRES_DATABASE \
-  --env MCP_POSTGRES_USERNAME \
-  --env MCP_POSTGRES_PASSWORD \
-  --env MCP_POSTGRES_SSLMODE \
+  --env DATABASE_URL \
   ghcr.io/futuretea/postgres-mcp-server:v0.0.1
 ```
 
@@ -96,26 +76,11 @@ For an MCP client that launches Docker, pass the connection settings through the
         "--rm",
         "-i",
         "--env",
-        "MCP_POSTGRES_HOST",
-        "--env",
-        "MCP_POSTGRES_PORT",
-        "--env",
-        "MCP_POSTGRES_DATABASE",
-        "--env",
-        "MCP_POSTGRES_USERNAME",
-        "--env",
-        "MCP_POSTGRES_PASSWORD",
-        "--env",
-        "MCP_POSTGRES_SSLMODE",
+        "DATABASE_URL",
         "ghcr.io/futuretea/postgres-mcp-server:v0.0.1"
       ],
       "env": {
-        "MCP_POSTGRES_HOST": "db.example.internal",
-        "MCP_POSTGRES_PORT": "5432",
-        "MCP_POSTGRES_DATABASE": "app",
-        "MCP_POSTGRES_USERNAME": "reader",
-        "MCP_POSTGRES_PASSWORD": "<runtime-secret>",
-        "MCP_POSTGRES_SSLMODE": "require"
+        "DATABASE_URL": "postgres://reader@db.example.internal:5432/app?sslmode=require"
       }
     }
   }
@@ -131,31 +96,16 @@ The Docker examples use `sslmode=require` for a remote database. Set the Postgre
 Pass MCP flags after the release command to start HTTP instead of stdio. On the host, the default listener is loopback:
 
 ```sh
-export MCP_POSTGRES_HOST=127.0.0.1
-export MCP_POSTGRES_PORT=5432
-export MCP_POSTGRES_DATABASE=app
-export MCP_POSTGRES_USERNAME=reader
-export MCP_POSTGRES_PASSWORD='<runtime-secret>'
-export MCP_POSTGRES_SSLMODE=disable
+export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
 npx -y @futuretea/postgres-mcp-server@0.0.1 --port 8080
 ```
 
 For Docker, the server must listen on all container interfaces, while the published port can remain loopback-only on the host:
 
 ```sh
-export MCP_POSTGRES_HOST=db.example.internal
-export MCP_POSTGRES_PORT=5432
-export MCP_POSTGRES_DATABASE=app
-export MCP_POSTGRES_USERNAME=reader
-export MCP_POSTGRES_PASSWORD='<runtime-secret>'
-export MCP_POSTGRES_SSLMODE=require
+export DATABASE_URL='postgres://reader@db.example.internal:5432/app?sslmode=require'
 docker run --rm \
-  --env MCP_POSTGRES_HOST \
-  --env MCP_POSTGRES_PORT \
-  --env MCP_POSTGRES_DATABASE \
-  --env MCP_POSTGRES_USERNAME \
-  --env MCP_POSTGRES_PASSWORD \
-  --env MCP_POSTGRES_SSLMODE \
+  --env DATABASE_URL \
   --publish 127.0.0.1:8080:8080 \
   ghcr.io/futuretea/postgres-mcp-server:v0.0.1 \
   --port 8080 --listen 0.0.0.0
@@ -179,9 +129,9 @@ Every successful tool response is one JSON text envelope with `schema_version`, 
 
 ## Database connection
 
-Set discrete environment variables. Do not put the host, password, or a connection URL in YAML. Passwords set this way are raw environment values and do not need URL encoding.
+Set discrete environment variables. Do not put the host, password, or a connection URL in YAML. A valid UTF-8 password does not need URL encoding.
 
-| Variable | libpq alias | Required | Default |
+| Variable | libpq alias | Required without `DATABASE_URL` or `PGSERVICE` | Default |
 |---|---|---|---|
 | `MCP_POSTGRES_HOST` | `PGHOST` | yes | none |
 | `MCP_POSTGRES_PORT` | `PGPORT` | no | `5432` |
@@ -194,7 +144,11 @@ Set discrete environment variables. Do not put the host, password, or a connecti
 
 Each `MCP_POSTGRES_*` variable is an alias of the `PG*` variable in the same row. If both names are set to different values, startup fails. The error names the two variables and does not print their values. `MCP_POSTGRES_*` is an explicit connection parameter, so it overrides a `PGSERVICE` entry for that field. When the `MCP_POSTGRES_*` alias is unset, a service file still overrides `PG*`, which is pgx's existing libpq behavior.
 
-`PGSERVICE` can supply the required fields from a PostgreSQL service file. Without `DATABASE_URL` or `PGSERVICE`, host, database, and username are required. A missing required field produces an error that names the absent variables, for example `[postgres_invalid_config] missing MCP_POSTGRES_HOST or PGHOST, MCP_POSTGRES_DATABASE or PGDATABASE, MCP_POSTGRES_USERNAME or PGUSER`.
+An unset `MCP_POSTGRES_PASSWORD` leaves `PGPASSWORD` and `.pgpass` in place. An empty `PGPASSWORD` is unset, matching libpq. Setting `MCP_POSTGRES_PASSWORD` to an empty string is an explicit empty password: it overrides `PGPASSWORD` and `.pgpass`. If that empty value and a non-empty `PGPASSWORD` are both set, startup fails and the error names the two variables without printing them.
+
+The resolved password must be valid UTF-8. This applies to `MCP_POSTGRES_PASSWORD`, `PGPASSWORD`, a `DATABASE_URL` password, a service-file password, and a `.pgpass` password. Invalid UTF-8 fails configuration with `[postgres_invalid_config] password must be valid UTF-8` and the value is not printed. Keeping the original bytes in the connection config is not authentication: pgx's SCRAM preparation replaces those bytes with U+FFFD and would send a different password.
+
+`PGSERVICE` can supply the required fields from a PostgreSQL service file. Without `DATABASE_URL` or `PGSERVICE`, host, database, and username are required. Libpq defaults for those three fields are not used, so a partial `PG*` setup that omits one of them fails. A missing required field produces an error that names the absent variables, for example `[postgres_invalid_config] missing MCP_POSTGRES_HOST or PGHOST, MCP_POSTGRES_DATABASE or PGDATABASE, MCP_POSTGRES_USERNAME or PGUSER`.
 
 Configuration must resolve to one `host:port`. Distinct URL targets or comma-separated hosts are rejected before a connection is created.
 

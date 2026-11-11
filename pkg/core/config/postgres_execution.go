@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -19,8 +20,6 @@ type PostgresExecutionConfig struct {
 	PoolConfig *pgxpool.Config
 }
 
-// postgresEnvField is one discrete connection setting. mcpName is the
-// first-class series variable. pgName is the libpq alias read by pgx.
 type postgresEnvField struct {
 	keyword  string
 	mcpName  string
@@ -29,10 +28,6 @@ type postgresEnvField struct {
 	secret   bool
 }
 
-// resolvedPostgresField is one discrete setting after alias resolution.
-// An explicit MCP_POSTGRES_* value is later passed as a connection
-// parameter. The PG* alias stays in the environment for pgx. Disagreement
-// fails configuration before a connection string is built.
 type resolvedPostgresField struct {
 	spec     postgresEnvField
 	mcpValue string
@@ -64,24 +59,37 @@ func discretePostgresFields() []postgresEnvField {
 // omits, and a URL setting overrides the same PG* variable. That is pgx's
 // libpq precedence and is the conflict policy for URL versus discrete fields.
 //
-// When DATABASE_URL is unset, MCP_POSTGRES_* is the first-class discrete
-// configuration. Each variable is an alias of the matching PG* variable. If
-// both names are set to different values, loading fails and the error names
-// the two variables. MCP_POSTGRES_* is passed as an explicit connection
-// parameter, so it overrides a PGSERVICE entry for that field. A service
-// file still overrides PG* when the MCP alias is unset.
+// When DATABASE_URL is unset, each MCP_POSTGRES_* variable is an alias of
+// the matching PG* variable. If both names are set to different values,
+// loading fails and the error names the two variables. MCP_POSTGRES_* is
+// passed as an explicit connection parameter, so it overrides a PGSERVICE
+// entry for that field. A service file still overrides PG* when the MCP
+// alias is unset.
 //
 // Without DATABASE_URL or PGSERVICE, host, database, and username are
-// required. The error names each missing variable. Port defaults to 5432,
-// password may be empty, and sslmode defaults to prefer. Parser failures
-// stay generic because a connection string can contain credentials.
+// required. Libpq's defaults for those fields are not used. The error names
+// each missing variable. Port defaults to 5432 and sslmode defaults to
+// prefer. An unset MCP_POSTGRES_PASSWORD leaves PGPASSWORD and .pgpass in
+// place. An empty PGPASSWORD is unset. An empty MCP_POSTGRES_PASSWORD is an
+// explicit empty password: it overrides PGPASSWORD and .pgpass, and it
+// disagrees with a non-empty PGPASSWORD.
+//
+// The resolved password must be valid UTF-8. pgx SCRAM preparation replaces
+// invalid UTF-8 with U+FFFD and would authenticate as a different password,
+// so that input is rejected before connect. The error does not include the
+// password. Other parser failures stay generic because a connection string
+// can contain credentials.
 func LoadPostgresExecutionConfig() (*PostgresExecutionConfig, error) {
 	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if databaseURL != "" {
+		if !utf8.ValidString(databaseURL) {
+			return nil, invalidUTF8Password()
+		}
 		if !hasSingleURLTarget(databaseURL) {
 			return nil, invalidPostgresConfig()
 		}
-		return parsePostgresPoolConfig(databaseURL)
+		cfg, err := parsePostgresPoolConfig(databaseURL)
+		return finishPassword(cfg, err, false)
 	}
 
 	fields, err := resolveDiscretePostgresFields()
@@ -93,15 +101,16 @@ func LoadPostgresExecutionConfig() (*PostgresExecutionConfig, error) {
 			return nil, missingPostgresFields(missing)
 		}
 	}
-	return parsePostgresPoolConfig(discreteKeywordString(fields))
+	cfg, err := parsePostgresPoolConfig(discreteKeywordString(fields))
+	return finishPassword(cfg, err, explicitEmptyMCPPassword(fields))
 }
 
 func resolveDiscretePostgresFields() ([]resolvedPostgresField, error) {
 	specs := discretePostgresFields()
 	resolved := make([]resolvedPostgresField, 0, len(specs))
 	for _, spec := range specs {
-		mcpValue, mcpSet := lookupPostgresEnv(spec.mcpName, spec.secret)
-		pgValue, pgSet := lookupPostgresEnv(spec.pgName, spec.secret)
+		mcpValue, mcpSet := lookupPostgresEnv(spec.mcpName, spec.secret, spec.secret)
+		pgValue, pgSet := lookupPostgresEnv(spec.pgName, spec.secret, false)
 		if mcpSet && pgSet && mcpValue != pgValue {
 			return nil, fmt.Errorf("%s %s and %s disagree", postgresInvalidConfigPrefix, spec.mcpName, spec.pgName)
 		}
@@ -116,12 +125,15 @@ func resolveDiscretePostgresFields() ([]resolvedPostgresField, error) {
 	return resolved, nil
 }
 
-func lookupPostgresEnv(key string, secret bool) (string, bool) {
+func lookupPostgresEnv(key string, secret bool, keepEmpty bool) (string, bool) {
 	value, ok := os.LookupEnv(key)
-	if !ok || value == "" {
+	if !ok {
 		return "", false
 	}
 	if secret {
+		if value == "" && !keepEmpty {
+			return "", false
+		}
 		return value, true
 	}
 	value = strings.TrimSpace(value)
@@ -132,8 +144,17 @@ func lookupPostgresEnv(key string, secret bool) (string, bool) {
 }
 
 func postgresServiceConfigured() bool {
-	_, ok := lookupPostgresEnv("PGSERVICE", false)
+	_, ok := lookupPostgresEnv("PGSERVICE", false, false)
 	return ok
+}
+
+func explicitEmptyMCPPassword(fields []resolvedPostgresField) bool {
+	for _, field := range fields {
+		if field.spec.secret && field.mcpSet && field.mcpValue == "" {
+			return true
+		}
+	}
+	return false
 }
 
 func missingRequiredPostgresFields(fields []resolvedPostgresField) []string {
@@ -150,11 +171,10 @@ func missingPostgresFields(names []string) error {
 	return fmt.Errorf("%s missing %s", postgresInvalidConfigPrefix, strings.Join(names, ", "))
 }
 
-// discreteKeywordString passes explicit MCP_POSTGRES_* values to pgx.
-// PG* aliases stay in the environment so a service file can still override
-// them. Values are quoted so a password does not need URL encoding and
-// cannot be read as another keyword. Quoting copies raw bytes; a password
-// is not required to be valid UTF-8.
+// discreteKeywordString quotes set MCP_POSTGRES_* values. Unset fields stay
+// in the environment so a service file can still override PG*. Quoting walks
+// bytes. A rune walk would replace invalid UTF-8 with U+FFFD before the
+// UTF-8 check could reject that password.
 func discreteKeywordString(fields []resolvedPostgresField) string {
 	var builder strings.Builder
 	for _, field := range fields {
@@ -194,6 +214,23 @@ func parsePostgresPoolConfig(connectionString string) (*PostgresExecutionConfig,
 		return nil, invalidPostgresConfig()
 	}
 	return &PostgresExecutionConfig{PoolConfig: poolConfig}, nil
+}
+
+func finishPassword(cfg *PostgresExecutionConfig, err error, explicitEmpty bool) (*PostgresExecutionConfig, error) {
+	if err != nil {
+		return nil, err
+	}
+	if explicitEmpty {
+		cfg.PoolConfig.ConnConfig.Password = ""
+	}
+	if !utf8.ValidString(cfg.PoolConfig.ConnConfig.Password) {
+		return nil, invalidUTF8Password()
+	}
+	return cfg, nil
+}
+
+func invalidUTF8Password() error {
+	return fmt.Errorf("%s password must be valid UTF-8", postgresInvalidConfigPrefix)
 }
 
 // hasSingleURLTarget rejects a URL whose authority and explicit host/port
