@@ -3,6 +3,7 @@
 package postgres
 
 import (
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -12,14 +13,9 @@ import (
 )
 
 func TestPostgres17FixtureServesReadOnlyDiscoveryAndQuery(t *testing.T) {
-	connectionURL := strings.TrimSpace(os.Getenv("POSTGRES_INTEGRATION_URL"))
-	if connectionURL == "" {
-		t.Fatal("POSTGRES_INTEGRATION_URL is required for the PostgreSQL integration fixture")
-	}
+	connectionURL := integrationConnectionURL(t)
+	clearPostgresConnectionEnv(t)
 	t.Setenv("DATABASE_URL", connectionURL)
-	for _, key := range []string{"PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGSSLMODE"} {
-		t.Setenv(key, "")
-	}
 
 	executionConfig, err := config.LoadPostgresExecutionConfig()
 	if err != nil {
@@ -79,6 +75,67 @@ func TestPostgres17FixtureServesReadOnlyDiscoveryAndQuery(t *testing.T) {
 		if _, err := service.Query(t.Context(), sql); err == nil || !strings.HasPrefix(err.Error(), "[postgres_query_rejected]") {
 			t.Fatalf("Query(%q) error = %v, want rejected strict SELECT", sql, err)
 		}
+	}
+}
+
+func TestPostgres17FixtureAcceptsDiscreteFieldsWithoutDatabaseURL(t *testing.T) {
+	parsed, err := url.Parse(integrationConnectionURL(t))
+	if err != nil {
+		t.Fatalf("parse integration URL: %v", err)
+	}
+	clearPostgresConnectionEnv(t)
+	t.Setenv("MCP_POSTGRES_HOST", parsed.Hostname())
+	t.Setenv("MCP_POSTGRES_PORT", parsed.Port())
+	t.Setenv("MCP_POSTGRES_DATABASE", strings.TrimPrefix(parsed.Path, "/"))
+	t.Setenv("MCP_POSTGRES_USERNAME", parsed.User.Username())
+	if password, ok := parsed.User.Password(); ok {
+		t.Setenv("MCP_POSTGRES_PASSWORD", password)
+	}
+	if sslmode := parsed.Query().Get("sslmode"); sslmode != "" {
+		t.Setenv("MCP_POSTGRES_SSLMODE", sslmode)
+	}
+
+	executionConfig, err := config.LoadPostgresExecutionConfig()
+	if err != nil {
+		t.Fatalf("LoadPostgresExecutionConfig(): %v", err)
+	}
+	if executionConfig.PoolConfig.ConnConfig.Host != parsed.Hostname() {
+		t.Fatalf("host = %q, want %q", executionConfig.PoolConfig.ConnConfig.Host, parsed.Hostname())
+	}
+	service, err := NewService(t.Context(), executionConfig, nil, false)
+	if err != nil {
+		t.Fatalf("NewService(): %v", err)
+	}
+	defer service.Close()
+
+	serverInfo, err := service.GetServerInfo(t.Context())
+	if err != nil {
+		t.Fatalf("GetServerInfo(): %v", err)
+	}
+	versionNumber, err := strconv.Atoi(serverInfo["server_version_num"].(string))
+	if err != nil || versionNumber < minimumServerVersion {
+		t.Fatalf("server_version_num = %#v, want PostgreSQL 17 fixture", serverInfo["server_version_num"])
+	}
+}
+
+func integrationConnectionURL(t *testing.T) string {
+	t.Helper()
+	connectionURL := strings.TrimSpace(os.Getenv("POSTGRES_INTEGRATION_URL"))
+	if connectionURL == "" {
+		t.Fatal("POSTGRES_INTEGRATION_URL is required for the PostgreSQL integration fixture")
+	}
+	return connectionURL
+}
+
+func clearPostgresConnectionEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"DATABASE_URL",
+		"PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGSSLMODE", "PGSERVICE", "PGSERVICEFILE",
+		"MCP_POSTGRES_HOST", "MCP_POSTGRES_PORT", "MCP_POSTGRES_DATABASE",
+		"MCP_POSTGRES_USERNAME", "MCP_POSTGRES_PASSWORD", "MCP_POSTGRES_SSLMODE",
+	} {
+		t.Setenv(key, "")
 	}
 }
 

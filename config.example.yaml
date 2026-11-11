@@ -2,8 +2,8 @@ port: 0
 listen: 127.0.0.1
 sse_base_url: ""
 log_level: info
-# Database connection configuration is execution-only. Set DATABASE_URL or
-# standard PostgreSQL environment variables outside this file.
+# Database connection configuration is execution-only. Do not put a host,
+# password, or connection URL in this file.
 enabled_tools: []
 disabled_tools: []
 enabled_domains: []

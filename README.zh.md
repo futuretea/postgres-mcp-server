@@ -4,10 +4,15 @@
 
 ## 快速开始
 
-先为最小权限 PostgreSQL 角色设置连接目标，再构建并查看工具目录：
+先为最小权限 PostgreSQL 角色设置分字段连接配置，再构建并查看工具目录。有效 UTF-8 密码是普通环境变量值，不需要 URL 编码。不是有效 UTF-8 的密码会在连接前被拒绝，错误信息不会包含密码。
 
 ```sh
-export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
+export MCP_POSTGRES_HOST=127.0.0.1
+export MCP_POSTGRES_PORT=5432
+export MCP_POSTGRES_DATABASE=app
+export MCP_POSTGRES_USERNAME=reader
+export MCP_POSTGRES_PASSWORD='<runtime-secret>'
+export MCP_POSTGRES_SSLMODE=disable
 make build
 ./bin/postgres-mcp-server tools list
 ./bin/postgres-mcp-server mcp
@@ -122,7 +127,38 @@ Streamable HTTP MCP 客户端使用 `http://127.0.0.1:8080/mcp`。服务也提�
 
 ## 数据库连接
 
-使用裸 `DATABASE_URL`，或者 PostgreSQL 标准环境变量：`PGHOST`、`PGPORT`、`PGDATABASE`、`PGUSER`、`PGPASSWORD`、`PGSSLMODE`。设置了 `DATABASE_URL` 时它优先。配置只能解析到一个 `host:port`；不同的 URL 目标或逗号分隔的 `PGHOST` 会在创建连接前失败。
+使用分字段环境变量。不要把主机、密码或连接 URL 写进 YAML。有效 UTF-8 密码不需要 URL 编码。
+
+| 变量 | libpq 别名 | 未设置 `DATABASE_URL` 或 `PGSERVICE` 时是否必填 | 默认值 |
+|---|---|---|---|
+| `MCP_POSTGRES_HOST` | `PGHOST` | 是 | 无 |
+| `MCP_POSTGRES_PORT` | `PGPORT` | 否 | `5432` |
+| `MCP_POSTGRES_DATABASE` | `PGDATABASE` | 是 | 无 |
+| `MCP_POSTGRES_USERNAME` | `PGUSER` | 是 | 无 |
+| `MCP_POSTGRES_PASSWORD` | `PGPASSWORD` | 否 | 空 |
+| `MCP_POSTGRES_SSLMODE` | `PGSSLMODE` | 否 | `prefer` |
+
+`MCP_POSTGRES_*` 与本服务已有的 `MCP_` 环境变量前缀一致，也与 ClickHouse 服务的 `MCP_CLICKHOUSE_*` 连接字段一致（`MCP_CLICKHOUSE_DATABASE`、`MCP_CLICKHOUSE_USERNAME`、`MCP_CLICKHOUSE_PASSWORD`）。MySQL 使用 `MYSQL_MCP_*`，是因为该仓库把包括 HTTP 端口在内的每个变量都放在 `MYSQL_MCP_` 前缀下。`MCP_POSTGRES_PORT` 是数据库端口，HTTP 端口仍是 `MCP_PORT`。
+
+每个 `MCP_POSTGRES_*` 变量都是同一行 `PG*` 变量的别名。同一对变量被设成不同的值时，启动失败。错误会写出这两个变量名，但不会打印变量值。`MCP_POSTGRES_*` 是显式连接参数，会覆盖 `PGSERVICE` 中的同名字段。未设置对应的 `MCP_POSTGRES_*` 时，service 文件仍会覆盖 `PG*`，这是 pgx 现有的 libpq 行为。
+
+未设置 `MCP_POSTGRES_PASSWORD` 时，仍使用 `PGPASSWORD` 和 `.pgpass`。空的 `PGPASSWORD` 视为未设置，与 libpq 一致。把 `MCP_POSTGRES_PASSWORD` 设成空字符串是显式空密码：它覆盖 `PGPASSWORD` 和 `.pgpass`。这个空值与非空 `PGPASSWORD` 同时存在时，启动失败，错误只写出这两个变量名，不打印值。
+
+最终解析出的密码必须是有效 UTF-8。这包括 `MCP_POSTGRES_PASSWORD`、`PGPASSWORD`、`DATABASE_URL` 中的密码、service 文件密码和 `.pgpass` 密码。无效 UTF-8 会以 `[postgres_invalid_config] password must be valid UTF-8` 失败，且不会打印密码。连接配置里保留原始字节并不等于认证成功：pgx 的 SCRAM 准备会把这些字节替换成 U+FFFD，从而发送另一个密码。
+
+`PGSERVICE` 可以从 PostgreSQL service 文件提供必填字段。未使用 `DATABASE_URL` 或 `PGSERVICE` 时，host、database、username 必填。这三个字段不使用 libpq 的默认值，因此缺少其中一项的部分 `PG*` 配置会失败。缺少必填字段时，错误会列出缺失的变量，例如 `[postgres_invalid_config] missing MCP_POSTGRES_HOST or PGHOST, MCP_POSTGRES_DATABASE or PGDATABASE, MCP_POSTGRES_USERNAME or PGUSER`。
+
+配置只能解析到一个 `host:port`。不同的 URL 目标或逗号分隔的主机会在创建连接前失败。
+
+### `DATABASE_URL`（可选）
+
+`DATABASE_URL` 仍是已有 libpq URL 的高级入口。设置了它时，该 URL 就是连接串，所有 `MCP_POSTGRES_*` 变量都会被忽略。标准 `PG*` 变量仍会补上 URL 里没有的设置；URL 中已有的设置覆盖同名 `PG*` 变量。要使用上面的分字段，请不要设置 `DATABASE_URL`。
+
+```sh
+export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
+```
+
+`DATABASE_URL` 中的密码必须做 URL 编码。密码含有保留字符时，请使用 `MCP_POSTGRES_PASSWORD`。
 
 服务启动时要求 PostgreSQL 17 或更新版本，并拒绝 superuser、可绕过行级安全、具备复制权限，或属于服务端文件、服务端程序、后端信号角色的服务账号。请使用独立的最小权限数据库角色。
 
@@ -147,7 +183,7 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_reader;
 
 ### 验证 schema 的有效权限
 
-设置 `DATABASE_URL` 前，请确认 `mcp_reader` 无法在目标 schema 中创建对象：
+配置连接前，请确认 `mcp_reader` 无法在目标 schema 中创建对象：
 
 ```sql
 SELECT has_schema_privilege('mcp_reader', 'public', 'CREATE') AS can_create_objects;
@@ -162,7 +198,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT SELECT ON TABLES TO mcp_reader;
 ```
 
-设置 `DATABASE_URL` 前，请用 `mcp_reader` 连接，并确认下面每个布尔值都为 `false`：
+配置连接前，请用 `mcp_reader` 连接，并确认下面每个布尔值都为 `false`：
 
 ```sql
 SELECT current_user, rolsuper, rolbypassrls, rolreplication,
@@ -215,7 +251,14 @@ HTTP 健康检查为 `GET /healthz`。transport 和工具过滤配置见 `config
 
 ```sh
 make docker
-docker run --rm -i --env DATABASE_URL postgres-mcp-server:dev
+docker run --rm -i \
+  --env MCP_POSTGRES_HOST \
+  --env MCP_POSTGRES_PORT \
+  --env MCP_POSTGRES_DATABASE \
+  --env MCP_POSTGRES_USERNAME \
+  --env MCP_POSTGRES_PASSWORD \
+  --env MCP_POSTGRES_SSLMODE \
+  postgres-mcp-server:dev
 ```
 
 镜像入口是 `postgres-mcp-server mcp`。
