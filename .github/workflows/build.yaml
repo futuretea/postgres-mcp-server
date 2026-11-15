@@ -68,6 +68,9 @@ jobs:
       - name: Run PostgreSQL 17 integration fixture
         run: make test-integration
 
+      - name: Run PostgreSQL 14 integration fixture
+        run: make test-integration POSTGRES_IMAGE=postgres:14-alpine
+
       - name: Upload coverage
         uses: codecov/codecov-action@v5
         with:

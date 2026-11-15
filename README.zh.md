@@ -1,6 +1,6 @@
 # PostgreSQL 只读 MCP Server
 
-这是一个面向单个 PostgreSQL 17+ 实例的 MCP（Model Context Protocol）服务。它提供数据库目录发现和受限的 SELECT 查询，可通过 stdio 或 HTTP 使用，也提供 CLI。
+这是一个面向单个 PostgreSQL 14 或更新版本实例的 MCP（Model Context Protocol）服务。它提供数据库目录发现和受限的 SELECT 查询，可通过 stdio 或 HTTP 使用，也提供 CLI。
 
 ## 快速开始
 
@@ -160,13 +160,13 @@ export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
 
 `DATABASE_URL` 中的密码必须做 URL 编码。密码含有保留字符时，请使用 `MCP_POSTGRES_PASSWORD`。
 
-服务启动时要求 PostgreSQL 17 或更新版本，并拒绝 superuser、可绕过行级安全、具备复制权限，或属于服务端文件、服务端程序、后端信号角色的服务账号。请使用独立的最小权限数据库角色。
+服务启动时要求 PostgreSQL 14 或更新版本，并拒绝 superuser、可绕过行级安全、具备复制权限，或属于服务端文件、服务端程序、后端信号角色的服务账号。请使用独立的最小权限数据库角色。
 
 若无法提供这样的角色，可设置 `allow_unsafe_database_role: true`（环境变量为 `MCP_ALLOW_UNSAFE_DATABASE_ROLE=true`）只跳过这一项角色检查。服务仍会把每条语句包在只读事务里，但角色层面的保证不再成立：superuser 能读取你本不想暴露的表、读取服务端文件、执行只读事务约束不到的服务端程序，`BYPASSRLS` 角色会看穿行级安全策略。仅对你掌控的数据库启用。
 
 ### 创建只读服务角色
 
-使用数据库管理员账号在 `psql` 中执行下列命令。将 `app`、`public` 替换成实际的数据库和 schema。该命令会创建一个不继承权限的新登录角色；不要复用管理员或应用 owner 角色。
+使用数据库管理员账号在 `psql` 中执行下列命令。将 `app`、`mcp_probe` 替换成实际的数据库和 schema。该命令会创建一个不继承权限的新登录角色；不要复用管理员或应用 owner 角色。
 
 ```sql
 CREATE ROLE mcp_reader
@@ -177,24 +177,26 @@ CREATE ROLE mcp_reader
 
 GRANT CONNECT ON DATABASE app TO mcp_reader;
 \connect app
-GRANT USAGE ON SCHEMA public TO mcp_reader;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_reader;
+CREATE SCHEMA mcp_probe;
+GRANT USAGE ON SCHEMA mcp_probe TO mcp_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA mcp_probe TO mcp_reader;
 ```
 
 ### 验证 schema 的有效权限
 
-配置连接前，请确认 `mcp_reader` 无法在目标 schema 中创建对象：
+配置连接前，请确认专用 schema，而不是 `public`：
 
 ```sql
-SELECT has_schema_privilege('mcp_reader', 'public', 'CREATE') AS can_create_objects;
+SELECT has_schema_privilege('mcp_reader', 'mcp_probe', 'CREATE') AS can_create_objects,
+       has_schema_privilege('mcp_reader', 'mcp_probe', 'USAGE') AS can_use_objects;
 ```
 
-结果必须为 `false`。若结果为 `true`，说明该角色在此 schema 中并非只读。若 PostgreSQL 14 或更早版本升级而来，`public` 可能保留共享的 `PUBLIC` `CREATE` 授权，从而出现此结果。不要只为该服务撤销共享的 `PUBLIC` 权限；应先由数据库管理员决定数据库级的 schema 策略。
+`can_create_objects` 必须为 `false`，`can_use_objects` 必须为 `true`。在全新数据库上，`has_schema_privilege('mcp_reader', 'public', 'CREATE')` 在 PostgreSQL 14 上为 `true`，在 PostgreSQL 17 上为 `false`。这是服务器默认授权。不要只为该服务撤销共享的 `PUBLIC` 权限；应先由数据库管理员决定数据库级的 schema 策略。
 
 `\password` 会交互式设置密码，不会把密码写入 shell 历史。连接密钥只应保存在运行环境的 secret 或环境变量管理器中，不能写入仓库。如果还需读取今后创建的表，且由 `postgres` 创建这些表，请用 `postgres` 执行以下可选命令；其他环境请把 `postgres` 替换成实际的对象创建角色：
 
 ```sql
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA mcp_probe
   GRANT SELECT ON TABLES TO mcp_reader;
 ```
 
@@ -309,7 +311,7 @@ docker run --rm -i \
 make format
 make lint
 make test
-make test-integration  # 需要 Docker daemon；会创建 PostgreSQL 17 fixture
+make test-integration  # 需要 Docker；默认 postgres:17-alpine。POSTGRES_IMAGE=postgres:14-alpine 选择 14。CI 两者都跑。
 make build
 make docker
 ```
