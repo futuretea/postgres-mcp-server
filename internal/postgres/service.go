@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	minimumServerVersion = 170000
+	minimumServerVersion = 140000
 	serverVersionSQL     = "SELECT current_setting('server_version_num')"
 	serviceRoleSQL       = `SELECT rolsuper, rolbypassrls, rolreplication,
 		pg_has_role(current_user, 'pg_read_server_files', 'member'),
@@ -111,7 +111,7 @@ func (s *Service) verifyStartup(ctx context.Context, allowUnsafeDatabaseRole boo
 		return connectionError()
 	}
 	if version < minimumServerVersion {
-		return postgresError("unsupported_server_version", "PostgreSQL 17 or later is required")
+		return postgresError("unsupported_server_version", "PostgreSQL 14 or later is required")
 	}
 
 	var superuser, bypassRLS, replication bool

@@ -14,7 +14,7 @@ import (
 
 func TestNewServiceStartupUsesReadOnlyExtendedProtocolAndRollsBack(t *testing.T) {
 	pool := newFakePool([]fakeRow{
-		{values: []any{"170000"}},
+		{values: []any{"140000"}},
 		{values: []any{false, false, false, false, false, false, false}},
 	})
 
@@ -58,9 +58,9 @@ func TestNewServiceRejectsUnsupportedOrUnsafeTargetBeforeToolSQL(t *testing.T) {
 		wantEvents int
 	}{
 		{
-			name:       "PostgreSQL 16",
-			rows:       []fakeRow{{values: []any{"160999"}}},
-			wantPrefix: "[postgres_unsupported_server_version] PostgreSQL 17 or later is required",
+			name:       "PostgreSQL 13",
+			rows:       []fakeRow{{values: []any{"139999"}}},
+			wantPrefix: "[postgres_unsupported_server_version] PostgreSQL 14 or later is required",
 			wantEvents: 1,
 		},
 	}
@@ -86,7 +86,7 @@ func TestNewServiceRejectsUnsupportedOrUnsafeTargetBeforeToolSQL(t *testing.T) {
 		}{
 			name: "unsafe service role: " + unsafeRole.name,
 			rows: []fakeRow{
-				{values: []any{"170000"}},
+				{values: []any{"140000"}},
 				{values: unsafeRole.flags},
 			},
 			wantPrefix: "[postgres_unsafe_service_role]",
@@ -117,9 +117,42 @@ func TestNewServiceRejectsUnsupportedOrUnsafeTargetBeforeToolSQL(t *testing.T) {
 	}
 }
 
+func TestNewServiceAcceptsPostgreSQL14And17(t *testing.T) {
+	for _, version := range []string{"140000", "170000"} {
+		t.Run(version, func(t *testing.T) {
+			pool := newFakePool([]fakeRow{
+				{values: []any{version}},
+				{values: []any{false, false, false, false, false, false, false}},
+			})
+			service, err := NewService(t.Context(), validExecutionConfig(t), fakePoolFactory(pool), false)
+			if err != nil || service == nil {
+				t.Fatalf("NewService(%s) error = %v, service = %#v", version, err, service)
+			}
+			service.Close()
+			if len(pool.events) != 2 {
+				t.Fatalf("startup SQL events = %#v, want version then service-role probe", pool.events)
+			}
+		})
+	}
+}
+
+func TestNewServiceRejectsOlderThan14EvenWhenUnsafeRoleIsAllowed(t *testing.T) {
+	pool := newFakePool([]fakeRow{{values: []any{"139999"}}})
+	service, err := NewService(t.Context(), validExecutionConfig(t), fakePoolFactory(pool), true)
+	if service != nil {
+		t.Fatalf("NewService() service = %#v, want nil below PostgreSQL 14", service)
+	}
+	if err == nil || !strings.HasPrefix(err.Error(), "[postgres_unsupported_server_version] PostgreSQL 14 or later is required") {
+		t.Fatalf("NewService() error = %v, want version rejection", err)
+	}
+	if len(pool.events) != 1 {
+		t.Fatalf("startup SQL events = %#v, want only the version probe", pool.events)
+	}
+}
+
 func TestNewServiceAllowsUnsafeServiceRoleOnlyWhenOptedIn(t *testing.T) {
 	pool := newFakePool([]fakeRow{
-		{values: []any{"170000"}},
+		{values: []any{"140000"}},
 		{values: []any{true, false, false, false, false, false, false}},
 	})
 
