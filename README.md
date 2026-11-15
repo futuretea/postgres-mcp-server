@@ -234,7 +234,7 @@ masking:
 export MCP_MASKING_JSON='{"enabled":true,"names":["synthetic_field"],"values":["synthetic-token-value"]}'
 ```
 
-`names` and `name_patterns` select a whole field name. They also select database, schema, table, column, index, owner, and role identifiers returned by these tools. Name patterns are anchored to the whole name. `values` and `value_patterns` are substring matches, including a one-character literal, and each match is replaced once. The placeholder is not searched again. A one-character literal can match inside ordinary words.
+`names` and `name_patterns` select a whole field name. They also select database, schema, table, column, index, owner, and role identifiers returned by these tools. Name patterns are anchored to the whole name. `a)|(b` is rejected. `(?:a)|(b)` matches only the whole names `a` and `b`. `values` and `value_patterns` are substring matches, including a one-character literal, and each match is replaced once. The placeholder is not searched again. A one-character literal can match inside ordinary words.
 
 A matched string becomes the placeholder, `[masked]` unless you set another one. A matched non-string becomes JSON null. An existing SQL NULL stays null. A null in a result can be a stored NULL or a redacted value. Types and nullability in the JSON can change when a rule matches. `ordinal_position` stays a number and `nullable` stays a boolean unless that whole value matches a rule.
 
@@ -242,7 +242,7 @@ The column type decides which rule applies. `text` and other ordinary strings st
 
 JSON and JSONB cells that are one JSON object or array are masked structurally, including escaped keys and JSON nested inside a string, for two JSON-in-string rounds. A deeper JSON value fails the result. Text that only looks like JSON stays text, apart from value matches. A JSON number or boolean that matches a value rule becomes null. An unmatched number keeps its original literal, including trailing zeros.
 
-`bytea` is recognized by the column type. Known `\x` hex is decoded, masked, and written back as hex. Value patterns also run on ASCII text inside invalid UTF-8. Escape-format `bytea`, invalid hex, and `bytea[]` fail the result when masking is on, and the original bytes are not returned. A text value that looks like hex is not decoded. A masked value past the size limit fails the result.
+`bytea` is recognized by the column type. Known `\x` hex is decoded, masked, and written back as hex. A hex cell longer than 1 MiB fails before it is decoded. Value patterns also run on ASCII text inside invalid UTF-8. Escape-format `bytea`, invalid hex, and `bytea[]` fail the result when masking is on, and the original bytes are not returned. A text value that looks like hex is not decoded. A masked value past the size limit fails the result.
 
 A value pattern that can match without consuming a character is rejected at startup. `\b|sk_live_4242` is one example. The error is `invalid masking config` and does not include the pattern. The shared masking package is copied from a pin that still awaits an independent review. This server does not claim that review is finished.
 

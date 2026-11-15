@@ -137,6 +137,53 @@ func TestOneBudgetCoversTheWholeResult(t *testing.T) {
 	}
 }
 
+func TestGroupedNamePatternMatchesWholeNamesOnly(t *testing.T) {
+	service := &maskService{view: queryResultView{
+		columns: []queryColumn{
+			{name: "a", typeOID: pgtype.TextOID, postgresType: "text"},
+			{name: "ab", typeOID: pgtype.TextOID, postgresType: "text"},
+			{name: "aSECRET", typeOID: pgtype.TextOID, postgresType: "text"},
+		},
+		rows: [][]*string{{strPtr("keep-a"), strPtr("keep-ab"), strPtr("keep-secret")}},
+	}}
+	text, err := callRuled(t, `{"enabled":true,"name_patterns":["(?:a)|(b)"]}`, service, "postgres_query")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		Data struct {
+			Columns []map[string]any `json:"columns"`
+			Rows    [][]any          `json:"rows"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(text), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Data.Columns[0]["name"] != "[masked]" || payload.Data.Rows[0][0] != "[masked]" {
+		t.Fatalf("whole name a leaked: %#v", payload.Data)
+	}
+	if payload.Data.Columns[1]["name"] != "ab" || payload.Data.Rows[0][1] != "keep-ab" || payload.Data.Columns[2]["name"] != "aSECRET" || payload.Data.Rows[0][2] != "keep-secret" {
+		t.Fatalf("partial names were masked: %#v", payload.Data)
+	}
+}
+
+func TestOversizedByteaHexFailsBeforeDecode(t *testing.T) {
+	const token = "sk_live_4242"
+	digits := hex.EncodeToString([]byte(token)) + strings.Repeat("00", 1<<19)
+	textCell := `\x` + digits
+	if len(textCell) <= 1<<20 {
+		t.Fatalf("fixture encoded length = %d, want above 1 MiB", len(textCell))
+	}
+	service := &maskService{view: queryResultView{
+		columns: []queryColumn{{name: "blob", typeOID: pgtype.ByteaOID, postgresType: "bytea"}},
+		rows:    [][]*string{{strPtr(textCell)}},
+	}}
+	text, err := callRuled(t, `{"enabled":true,"values":["`+token+`"]}`, service, "postgres_query")
+	if text != "" || err == nil || err.Error() != "[postgres_masking_failed] result was not returned" || strings.Contains(err.Error(), token) {
+		t.Fatalf("oversized bytea result = %q, %v", text, err)
+	}
+}
+
 func TestInvalidUTF8ByteaRegexIsNotReturned(t *testing.T) {
 	const token = "sk_live_4242"
 	raw := append([]byte{0xff}, []byte(token)...)

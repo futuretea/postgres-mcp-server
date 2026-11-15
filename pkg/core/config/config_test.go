@@ -122,6 +122,33 @@ func TestZeroWidthValuePatternIsRejectedWithoutThePatternText(t *testing.T) {
 	}
 }
 
+func TestNamePatternAnchorCannotEscapeTheGroup(t *testing.T) {
+	payload, err := json.Marshal(map[string]any{
+		"enabled":       true,
+		"name_patterns": []string{`a)|(b`},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MCP_MASKING_JSON", string(payload))
+	_, err = config.LoadConfig("", viper.New())
+	if err == nil || err.Error() != masking.InvalidConfigMessage || strings.Contains(err.Error(), `a)|(b`) {
+		t.Fatalf("breakout pattern error = %v", err)
+	}
+
+	t.Setenv("MCP_MASKING_JSON", `{"enabled":true,"name_patterns":["(?:a)|(b)"]}`)
+	cfg, err := config.LoadConfig("", viper.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Masking.MatchName("a") || !cfg.Masking.MatchName("b") {
+		t.Fatal("grouped alternation missed a whole name")
+	}
+	if cfg.Masking.MatchName("aSECRET") || cfg.Masking.MatchName("zzb") || cfg.Masking.MatchName("ab") {
+		t.Fatal("grouped alternation matched outside the whole name")
+	}
+}
+
 func TestMaskingIsDisabledWithoutConfig(t *testing.T) {
 	cfg, err := config.LoadConfig("", viper.New())
 	if err != nil {

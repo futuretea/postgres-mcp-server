@@ -232,7 +232,7 @@ masking:
 export MCP_MASKING_JSON='{"enabled":true,"names":["synthetic_field"],"values":["synthetic-token-value"]}'
 ```
 
-`names` 和 `name_patterns` 匹配完整字段名，也匹配这些工具返回的数据库名、schema 名、表名、列名、索引名、所有者和角色名。名字模式锚定整段名字。`values` 和 `value_patterns` 是子串匹配，包括单字符字面量，并且只替换一次。占位符不会再次被搜索。单字符字面量可能命中普通单词。
+`names` 和 `name_patterns` 匹配完整字段名，也匹配这些工具返回的数据库名、schema 名、表名、列名、索引名、所有者和角色名。名字模式锚定整段名字。`a)|(b` 会被拒绝。`(?:a)|(b)` 只匹配完整名字 `a` 和 `b`。`values` 和 `value_patterns` 是子串匹配，包括单字符字面量，并且只替换一次。占位符不会再次被搜索。单字符字面量可能命中普通单词。
 
 命中的字符串换成占位符，默认是 `[masked]`。命中的非字符串变成 JSON null。原本的 SQL NULL 仍是 null。结果里的 null 可能是库内 NULL，也可能是被隐去的值。规则命中时，JSON 里的类型和可空性可能改变。`ordinal_position` 和 `nullable` 在整值未命中时仍分别是数字和布尔值。
 
@@ -240,7 +240,7 @@ export MCP_MASKING_JSON='{"enabled":true,"names":["synthetic_field"],"values":["
 
 整段都是 JSON 对象或数组的 JSON、JSONB 单元格会按结构脱敏，包括转义后的键和字符串里再嵌套的 JSON，最多两轮“字符串里的 JSON”。更深的嵌套会使该次结果失败。只是看起来像 JSON 的文本仍按文本处理，只做值匹配。命中值规则的 JSON 数字或布尔值变成 null。未命中的数字保留原来的字面量，包括末尾的零。
 
-`bytea` 只按列类型识别。已知的 `\x` 十六进制会先解码、再脱敏、然后重新写成十六进制。值模式也会作用在非法 UTF-8 内部的 ASCII 文本上。转义格式的 `bytea`、非法十六进制和 `bytea[]` 在脱敏开启时会使该次结果失败，原始字节不会返回。看起来像十六进制的 text 不会被当作 `bytea` 解码。超过长度限制的脱敏结果会使该次调用失败。
+`bytea` 只按列类型识别。已知的 `\x` 十六进制会先解码、再脱敏、然后重新写成十六进制。超过 1 MiB 的十六进制单元格在解码前失败。值模式也会作用在非法 UTF-8 内部的 ASCII 文本上。转义格式的 `bytea`、非法十六进制和 `bytea[]` 在脱敏开启时会使该次结果失败，原始字节不会返回。看起来像十六进制的 text 不会被当作 `bytea` 解码。超过长度限制的脱敏结果会使该次调用失败。
 
 不消耗字符就能匹配的值模式会在启动时被拒绝，例如 `\b|sk_live_4242`。错误是 `invalid masking config`，不包含模式原文。这里复制的共享脱敏包仍在等待独立复审。本服务不把那次复审说成已经完成。
 

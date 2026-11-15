@@ -141,6 +141,9 @@ func (m masker) maskByteaHex(text string) (string, error) {
 	if !strings.HasPrefix(text, `\x`) {
 		return "", masking.ErrFailed
 	}
+	if !masking.WithinInput(len(text)) {
+		return "", masking.ErrFailed
+	}
 	digits := text[2:]
 	if len(digits)%2 != 0 || !onlyHex(digits) {
 		return "", masking.ErrFailed
