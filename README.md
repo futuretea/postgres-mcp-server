@@ -2,7 +2,7 @@
 
 [中文](README.zh.md)
 
-An MCP (Model Context Protocol) server for discovering one PostgreSQL 17+ instance and running a deliberately narrow SELECT subset. It exposes MCP over stdio or HTTP and includes a CLI.
+An MCP (Model Context Protocol) server for discovering one PostgreSQL 14 or newer instance and running a deliberately narrow SELECT subset. It exposes MCP over stdio or HTTP and includes a CLI.
 
 ## Quick start
 
@@ -162,13 +162,13 @@ export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
 
 A password in `DATABASE_URL` must be URL-encoded. Prefer `MCP_POSTGRES_PASSWORD` when the password contains reserved characters.
 
-At startup the server requires PostgreSQL 17 or newer and rejects service roles that are superusers, bypass row-level security, have replication, or belong to server-file, server-program, or backend-signalling roles. Use a dedicated, least-privilege database role.
+At startup the server requires PostgreSQL 14 or newer and rejects service roles that are superusers, bypass row-level security, have replication, or belong to server-file, server-program, or backend-signalling roles. Use a dedicated, least-privilege database role.
 
 If you cannot provision such a role, set `allow_unsafe_database_role: true` (`MCP_ALLOW_UNSAFE_DATABASE_ROLE=true` for the environment) to skip only this role check. The server still wraps every statement in a read-only transaction, but the role-level guarantee is gone: a superuser role can read tables you did not intend to expose, read server files, and run server-side programs that a read-only transaction does not constrain, and a `BYPASSRLS` role sees through row-level security policies. Enable it only against a database you control.
 
 ### Create a read-only service role
 
-Run the following in `psql` as a database administrator. Replace `app` and `public` with your database and schema. This creates a fresh login role with no inherited privileges; do not reuse an administrator or application-owner role.
+Run the following in `psql` as a database administrator. Replace `app` and `mcp_probe` with your database and schema. This creates a fresh login role with no inherited privileges; do not reuse an administrator or application-owner role.
 
 ```sql
 CREATE ROLE mcp_reader
@@ -179,24 +179,26 @@ CREATE ROLE mcp_reader
 
 GRANT CONNECT ON DATABASE app TO mcp_reader;
 \connect app
-GRANT USAGE ON SCHEMA public TO mcp_reader;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_reader;
+CREATE SCHEMA mcp_probe;
+GRANT USAGE ON SCHEMA mcp_probe TO mcp_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA mcp_probe TO mcp_reader;
 ```
 
 ### Verify effective schema privileges
 
-Before configuring the connection, verify that `mcp_reader` cannot create objects in the target schema:
+Before configuring the connection, verify the dedicated schema, not `public`:
 
 ```sql
-SELECT has_schema_privilege('mcp_reader', 'public', 'CREATE') AS can_create_objects;
+SELECT has_schema_privilege('mcp_reader', 'mcp_probe', 'CREATE') AS can_create_objects,
+       has_schema_privilege('mcp_reader', 'mcp_probe', 'USAGE') AS can_use_objects;
 ```
 
-The result must be `false`. A result of `true` means the role is not restricted to read access in that schema. This can occur when an installation upgraded from PostgreSQL 14 or earlier retains a shared `PUBLIC` `CREATE` grant on `public`. Do not revoke a shared `PUBLIC` privilege solely for this server; have the database administrator decide the database-wide schema policy first.
+`can_create_objects` must be `false` and `can_use_objects` must be `true`. On a fresh database, `has_schema_privilege('mcp_reader', 'public', 'CREATE')` is `true` on PostgreSQL 14 and `false` on PostgreSQL 17. That is the server default. Do not revoke a shared `PUBLIC` privilege solely for this server; have the database administrator decide the database-wide schema policy first.
 
 The `\password` command prompts without placing the password in shell history. Store the resulting connection secret only in the runtime secret or environment manager, not in the repository. If the role must read tables created in the future and `postgres` creates those tables, run this optional command as `postgres`. Replace `postgres` with the actual object-creator role in other environments:
 
 ```sql
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA mcp_probe
   GRANT SELECT ON TABLES TO mcp_reader;
 ```
 
@@ -311,7 +313,7 @@ The image entrypoint is `postgres-mcp-server mcp`.
 make format
 make lint
 make test
-make test-integration  # requires a running Docker daemon; creates a PostgreSQL 17 fixture
+make test-integration  # Docker; default postgres:17-alpine. POSTGRES_IMAGE=postgres:14-alpine selects 14. CI runs both.
 make build
 make docker
 ```

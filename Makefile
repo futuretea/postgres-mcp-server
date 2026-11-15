@@ -32,9 +32,17 @@ build-platform:
 test:
 	go test ./...
 
+POSTGRES_IMAGE ?= postgres:17-alpine
+
 test-integration:
 	@set -eu; \
-		container="$$(docker run --rm -d -e POSTGRES_HOST_AUTH_METHOD=trust -P postgres:17-alpine)"; \
+		image="$(POSTGRES_IMAGE)"; \
+		major="$$(printf '%s\n' "$$image" | sed -n 's/^postgres:\([0-9][0-9]*\)-alpine$$/\1/p')"; \
+		if [ "$$major" != 14 ] && [ "$$major" != 17 ]; then \
+			printf '%s\n' "POSTGRES_IMAGE must be postgres:14-alpine or postgres:17-alpine" >&2; \
+			exit 1; \
+		fi; \
+		container="$$(docker run --rm -d -e POSTGRES_HOST_AUTH_METHOD=trust -P "$$image")"; \
 		cleanup() { docker rm -f "$$container" >/dev/null 2>&1 || true; }; \
 		trap cleanup EXIT; \
 		for attempt in $$(seq 1 30); do \
@@ -43,12 +51,12 @@ test-integration:
 			if [ "$$attempt" = 30 ]; then printf '%s\n' "PostgreSQL fixture did not become ready" >&2; exit 1; fi; \
 			sleep 1; \
 		done; \
-		docker exec "$$container" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'CREATE ROLE mcp_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS'; \
-		docker exec "$$container" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'CREATE DATABASE app'; \
-		docker exec "$$container" psql -v ON_ERROR_STOP=1 -U postgres -d app -c 'GRANT CONNECT ON DATABASE app TO mcp_reader; GRANT USAGE ON SCHEMA public TO mcp_reader; GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_reader; ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO mcp_reader; CREATE TABLE public.widgets (id integer PRIMARY KEY, name text NOT NULL); CREATE INDEX widgets_name_idx ON public.widgets (name)'; \
 		port="$$(docker port "$$container" 5432/tcp | sed -n '1s/.*://p')"; \
 		test -n "$$port"; \
-		POSTGRES_INTEGRATION_URL="postgres://mcp_reader@127.0.0.1:$$port/app?sslmode=disable" go test -tags=integration ./internal/postgres
+		env -u PGHOST -u PGPORT -u PGDATABASE -u PGUSER -u PGPASSWORD -u PGSSLMODE -u PGSERVICE -u PGSERVICEFILE \
+			POSTGRES_INTEGRATION_MAJOR="$$major" \
+			POSTGRES_INTEGRATION_ADMIN_URL="postgres://postgres@127.0.0.1:$$port/postgres?sslmode=disable" \
+			go test -count=1 -timeout 180s -tags=integration ./internal/postgres
 
 lint:
 	go vet ./...
