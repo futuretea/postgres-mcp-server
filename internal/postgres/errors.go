@@ -26,3 +26,7 @@ func metadataError() error {
 func queryError() error {
 	return postgresError("query_failed", "query execution failed")
 }
+
+func maskingFailed() error {
+	return postgresError("masking_failed", "result was not returned")
+}

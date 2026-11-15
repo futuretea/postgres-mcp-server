@@ -76,7 +76,7 @@ func newToolsDescribeCommand(streams IOStreams, cfgFile *string, v *viper.Viper)
 			}
 			tool, ok := findTool(tools, args[0])
 			if !ok {
-				return fmt.Errorf("unknown tool %q; run 'postgres-mcp-server tools list' to see available tools", args[0])
+				return unknownToolError(cfg, args[0])
 			}
 			description := newToolDescription(tool)
 			if jsonOutput {
@@ -116,7 +116,7 @@ func newToolsCallCommand(streams IOStreams, cfgFile *string, v *viper.Viper) *co
 			}
 			tool, ok := findTool(tools, args[0])
 			if !ok {
-				return fmt.Errorf("unknown tool %q; run 'postgres-mcp-server tools list' to see available tools", args[0])
+				return unknownToolError(cfg, args[0])
 			}
 			if tool.NormalizeRawArguments == nil {
 				return postgres.InvalidParametersError()
@@ -139,7 +139,7 @@ func newToolsCallCommand(streams IOStreams, cfgFile *string, v *viper.Viper) *co
 			}
 			executionTool, ok := findTool(executionTools, args[0])
 			if !ok {
-				return fmt.Errorf("unknown tool %q; run 'postgres-mcp-server tools list' to see available tools", args[0])
+				return unknownToolError(cfg, args[0])
 			}
 			params, err := executionTool.NormalizeRawArguments(raw)
 			if err != nil {
@@ -247,8 +247,19 @@ func printToolDescription(out io.Writer, description toolDescription) error {
 	return nil
 }
 
+func unknownToolError(cfg *config.StaticConfig, name string) error {
+	if cfg != nil && cfg.Masking.Enabled() {
+		return postgres.InvalidParametersError()
+	}
+	return fmt.Errorf("unknown tool %q; run 'postgres-mcp-server tools list' to see available tools", name)
+}
+
 func toolcatalogForService(cfg *config.StaticConfig, service *postgres.Service) ([]toolset.ServerTool, error) {
-	return toolcatalog.Build(defaultToolsets(service), toolset.FilterOptions{
+	toolsets, err := defaultToolsets(service, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return toolcatalog.Build(toolsets, toolset.FilterOptions{
 		EnabledTools:    cfg.EnabledTools,
 		DisabledTools:   cfg.DisabledTools,
 		EnabledDomains:  cfg.EnabledDomains,

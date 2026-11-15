@@ -116,6 +116,30 @@ func TestVersionCommand(t *testing.T) {
 	}
 }
 
+func TestActiveMaskingConfigAndUnknownToolDoNotEchoInput(t *testing.T) {
+	secret := "synthetic-token-value"
+	t.Setenv("MCP_MASKING_JSON", `{"enabled":true,"extra":"`+secret+`"}`)
+	var stderr bytes.Buffer
+	root := cmd.NewRootCommand(cmd.IOStreams{Out: &bytes.Buffer{}, ErrOut: &stderr})
+	root.SetArgs([]string{"tools", "list"})
+	err := root.Execute()
+	if err == nil || strings.Contains(err.Error(), secret) || strings.Contains(stderr.String(), secret) {
+		t.Fatalf("invalid masking error = %v stderr=%q", err, stderr.String())
+	}
+	if !strings.Contains(err.Error(), "invalid masking config") {
+		t.Fatalf("error = %v, want invalid masking config", err)
+	}
+
+	t.Setenv("MCP_MASKING_JSON", `{"enabled":true,"values":["`+secret+`"]}`)
+	stderr.Reset()
+	root = cmd.NewRootCommand(cmd.IOStreams{Out: &bytes.Buffer{}, ErrOut: &stderr})
+	root.SetArgs([]string{"tools", "describe", secret})
+	err = root.Execute()
+	if err == nil || strings.Contains(err.Error(), secret) || strings.Contains(stderr.String(), secret) {
+		t.Fatalf("unknown tool error = %v stderr=%q", err, stderr.String())
+	}
+}
+
 func TestToolsUnknownTool(t *testing.T) {
 	var out bytes.Buffer
 	root := cmd.NewRootCommand(cmd.IOStreams{Out: &out, ErrOut: &out})

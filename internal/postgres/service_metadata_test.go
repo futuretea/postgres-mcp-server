@@ -187,6 +187,7 @@ type field struct {
 }
 
 type metadataEvent struct {
+	sql             string
 	usesExecMode    bool
 	usesTextResults bool
 }
@@ -234,8 +235,8 @@ func (tx metadataTx) QueryRow(context.Context, string, ...any) Row {
 	return metadataRow{err: errors.New("unexpected QueryRow")}
 }
 
-func (tx metadataTx) Query(_ context.Context, _ string, args ...any) (Rows, error) {
-	event := metadataEvent{}
+func (tx metadataTx) Query(_ context.Context, sql string, args ...any) (Rows, error) {
+	event := metadataEvent{sql: sql}
 	for _, arg := range args {
 		if mode, ok := arg.(pgx.QueryExecMode); ok && mode == pgx.QueryExecModeExec {
 			event.usesExecMode = true

@@ -212,6 +212,46 @@ WHERE rolname = current_user;
 
 若任一值为 `true`，请新建专用角色；不要为了 MCP 从共享管理员或应用角色中移除权限。
 
+## 输出脱敏
+
+未配置 `masking`，或 `enabled` 省略、为 false 时，脱敏关闭，工具输出保持原有文本。只有 `enabled: true` 且至少有一条规则时才会启用。环境变量 `MCP_MASKING_JSON` 只要存在，就整份替换 YAML 里的 `masking` 对象。空值无效。未设置该变量时仍使用 YAML。
+
+空文档、未知字段，以及 `enabled: true` 但没有任何规则，都会让进程启动失败。错误文本是 `invalid masking config`，不包含配置原文。
+
+```yaml
+masking:
+  enabled: true
+  placeholder: "[masked]"
+  names: ["synthetic_field"]
+  name_patterns: ["token_.+"]
+  values: ["synthetic-token-value"]
+  value_patterns: ["sk_live_[0-9]+"]
+```
+
+```sh
+export MCP_MASKING_JSON='{"enabled":true,"names":["synthetic_field"],"values":["synthetic-token-value"]}'
+```
+
+`names` 和 `name_patterns` 匹配完整字段名，也匹配这些工具返回的数据库名、schema 名、表名、列名、索引名、所有者和角色名。名字模式锚定整段名字。`a)|(b` 会被拒绝。`(?:a)|(b)` 只匹配完整名字 `a` 和 `b`。`values` 和 `value_patterns` 是子串匹配，包括单字符字面量，并且只替换一次。占位符不会再次被搜索。单字符字面量可能命中普通单词。
+
+命中的字符串换成占位符，默认是 `[masked]`。命中的非字符串变成 JSON null。原本的 SQL NULL 仍是 null。结果里的 null 可能是库内 NULL，也可能是被隐去的值。规则命中时，JSON 里的类型和可空性可能改变。`ordinal_position` 和 `nullable` 在整值未命中时仍分别是数字和布尔值。
+
+列类型决定用哪条规则。`text` 和其他普通字符串始终按字符串处理，即使每个字符都是数字。命中的只是那段子串，换成占位符。`smallint`、`integer`、`bigint`、`real`、`double precision`、`numeric` 和 `boolean` 使用 PostgreSQL 发来的原始文本。值规则只要命中这段文本，整个值变成 null，不会在数字中间改写。文本为 `t` 的布尔单元格不会命中针对 `true` 的规则。未命中的数字保留原来的字面量。
+
+整段都是 JSON 对象或数组的 JSON、JSONB 单元格会按结构脱敏，包括转义后的键和字符串里再嵌套的 JSON，最多两轮“字符串里的 JSON”。更深的嵌套会使该次结果失败。只是看起来像 JSON 的文本仍按文本处理，只做值匹配。命中值规则的 JSON 数字或布尔值变成 null。未命中的数字保留原来的字面量，包括末尾的零。
+
+`bytea` 只按列类型识别。已知的 `\x` 十六进制会先解码、再脱敏、然后重新写成十六进制。超过 1 MiB 的十六进制单元格在解码前失败。值模式也会作用在非法 UTF-8 内部的 ASCII 文本上。转义格式的 `bytea`、非法十六进制和 `bytea[]` 在脱敏开启时会使该次结果失败，原始字节不会返回。看起来像十六进制的 text 不会被当作 `bytea` 解码。超过长度限制的脱敏结果会使该次调用失败。
+
+不消耗字符就能匹配的值模式会在启动时被拒绝，例如 `\b|sk_live_4242`。错误是 `invalid masking config`，不包含模式原文。这里复制的共享脱敏包仍在等待独立复审。本服务不把那次复审说成已经完成。
+
+这些工具不返回列注释或表注释。索引表达式在 `definition` 字符串里，默认值在 `default` 字符串里。名字规则不搜索这些字符串内部，值规则会。
+
+`schema_version` 和工具名是服务端常量，不参与扫描。固定公开错误和占位符也不扫描。同时出现在其中的短字面量仍可能看见。脱敏不能发现每一种私密值、压缩载荷或编码。
+
+无法完成脱敏时，包括名字冲突、不支持的结果形状或超过长度限制，调用失败并返回 `[postgres_masking_failed] result was not returned`，不会返回半份 JSON。脱敏只改变发出的文本。发给 PostgreSQL 的 SQL 和库里的数据保持不变。
+
+HTTP 调试日志只记录路由类别（`mcp`、`sse`、`message` 或 `other`），不记录请求路径或 query。
+
 ## 只读边界与部署风险
 
 每次数据库操作都在 PostgreSQL read-only transaction 和 pgx extended execution protocol 中执行。`postgres_query` 会解析为恰好一条 SELECT，并拒绝 DML、DDL、行锁、SELECT INTO、修改型 CTE 以及一组已知有副作用的 PostgreSQL 内建函数。

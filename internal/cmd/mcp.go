@@ -80,9 +80,13 @@ func runServer(ctx context.Context, cfgFile string, streams IOStreams, v *viper.
 	}
 	defer postgresService.Close()
 
+	toolsets, err := defaultToolsets(postgresService, cfg)
+	if err != nil {
+		return err
+	}
 	server, err := mcpserver.NewServer(mcpserver.Configuration{
 		StaticConfig: cfg,
-		Toolsets:     defaultToolsets(postgresService),
+		Toolsets:     toolsets,
 	})
 	if err != nil {
 		return fmt.Errorf("create MCP server: %w", err)

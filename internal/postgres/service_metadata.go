@@ -151,26 +151,52 @@ func (s *Service) ListIndexes(ctx context.Context, schema, table string) (map[st
 	return map[string]any{"schema": schema, "table": table, "indexes": objectsFromRows(result)}, nil
 }
 
+type queryColumn struct {
+	name         string
+	typeOID      uint32
+	postgresType string
+}
+
+type queryResultView struct {
+	columns []queryColumn
+	rows    [][]*string
+}
+
 func (s *Service) Query(ctx context.Context, sql string) (map[string]any, error) {
-	if err := ValidateStrictSelect(sql); err != nil {
+	view, err := s.queryResultView(ctx, sql)
+	if err != nil {
 		return nil, err
+	}
+	return queryResultMap(view), nil
+}
+
+func (s *Service) queryResultView(ctx context.Context, sql string) (queryResultView, error) {
+	if err := ValidateStrictSelect(sql); err != nil {
+		return queryResultView{}, err
 	}
 	result, err := s.queryText(ctx, sql)
 	if err != nil {
-		return nil, queryError()
+		return queryResultView{}, queryError()
 	}
 
 	postgresTypes, err := s.formatTypes(ctx, result.typeOIDs)
 	if err != nil {
-		return nil, queryError()
+		return queryResultView{}, queryError()
 	}
-	columns := make([]map[string]any, len(result.fieldNames))
+	columns := make([]queryColumn, len(result.fieldNames))
 	for index, name := range result.fieldNames {
-		columns[index] = map[string]any{"name": name, "postgres_type": postgresTypes[index]}
+		columns[index] = queryColumn{name: name, typeOID: result.typeOIDs[index], postgresType: postgresTypes[index]}
 	}
+	return queryResultView{columns: columns, rows: result.rows}, nil
+}
 
-	rows := make([][]any, len(result.rows))
-	for rowIndex, row := range result.rows {
+func queryResultMap(view queryResultView) map[string]any {
+	columns := make([]map[string]any, len(view.columns))
+	for index, column := range view.columns {
+		columns[index] = map[string]any{"name": column.name, "postgres_type": column.postgresType}
+	}
+	rows := make([][]any, len(view.rows))
+	for rowIndex, row := range view.rows {
 		rows[rowIndex] = make([]any, len(row))
 		for columnIndex, value := range row {
 			if value != nil {
@@ -178,7 +204,7 @@ func (s *Service) Query(ctx context.Context, sql string) (map[string]any, error)
 			}
 		}
 	}
-	return map[string]any{"columns": columns, "rows": rows}, nil
+	return map[string]any{"columns": columns, "rows": rows}
 }
 
 func (s *Service) formatTypes(ctx context.Context, oids []uint32) ([]string, error) {
