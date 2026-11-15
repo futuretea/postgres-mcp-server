@@ -214,6 +214,46 @@ WHERE rolname = current_user;
 
 If any value is `true`, use a new dedicated role rather than removing privileges from a shared administrator or application role.
 
+## Output masking
+
+Masking is off unless it is explicitly enabled. With no `masking` key, and with `enabled` omitted or false, tool output is the previous text. Set `enabled: true` and at least one rule to turn it on. `MCP_MASKING_JSON`, when the variable is present, replaces the whole YAML `masking` object. An empty value is invalid. Unset leaves the YAML object in place.
+
+Empty documents, unknown fields, and `enabled: true` with no rules fail startup. The error is `invalid masking config` and does not include the document.
+
+```yaml
+masking:
+  enabled: true
+  placeholder: "[masked]"
+  names: ["synthetic_field"]
+  name_patterns: ["token_.+"]
+  values: ["synthetic-token-value"]
+  value_patterns: ["sk_live_[0-9]+"]
+```
+
+```sh
+export MCP_MASKING_JSON='{"enabled":true,"names":["synthetic_field"],"values":["synthetic-token-value"]}'
+```
+
+`names` and `name_patterns` select a whole field name. They also select database, schema, table, column, index, owner, and role identifiers returned by these tools. Name patterns are anchored to the whole name. `values` and `value_patterns` are substring matches, including a one-character literal, and each match is replaced once. The placeholder is not searched again. A one-character literal can match inside ordinary words.
+
+A matched string becomes the placeholder, `[masked]` unless you set another one. A matched non-string becomes JSON null. An existing SQL NULL stays null. A null in a result can be a stored NULL or a redacted value. Types and nullability in the JSON can change when a rule matches. `ordinal_position` stays a number and `nullable` stays a boolean unless that whole value matches a rule.
+
+The column type decides which rule applies. `text` and other ordinary strings stay strings, even when every character is a digit. A match replaces that span with the placeholder. `smallint`, `integer`, `bigint`, `real`, `double precision`, `numeric`, and `boolean` use the exact text PostgreSQL sent. If a value rule hits that text, the whole value becomes null and the digits are not edited in place. A boolean cell whose text is `t` does not match a rule for `true`. An unmatched number keeps its original literal.
+
+JSON and JSONB cells that are one JSON object or array are masked structurally, including escaped keys and JSON nested inside a string, for two JSON-in-string rounds. A deeper JSON value fails the result. Text that only looks like JSON stays text, apart from value matches. A JSON number or boolean that matches a value rule becomes null. An unmatched number keeps its original literal, including trailing zeros.
+
+`bytea` is recognized by the column type. Known `\x` hex is decoded, masked, and written back as hex. Value patterns also run on ASCII text inside invalid UTF-8. Escape-format `bytea`, invalid hex, and `bytea[]` fail the result when masking is on, and the original bytes are not returned. A text value that looks like hex is not decoded. A masked value past the size limit fails the result.
+
+A value pattern that can match without consuming a character is rejected at startup. `\b|sk_live_4242` is one example. The error is `invalid masking config` and does not include the pattern. The shared masking package is copied from a pin that still awaits an independent review. This server does not claim that review is finished.
+
+These tools do not return column or table comments. Index expressions are the `definition` string, and defaults are the `default` string. Name rules do not search inside those strings. Value rules do.
+
+`schema_version` and the tool name are server constants and are not scanned. Fixed public errors and the placeholder are not scanned. A short literal that also occurs there can remain. Masking does not find every private value, compressed payload, or encoding.
+
+If a result cannot be masked, including a name collision, an unsupported shape, or a value past the size limit, the call fails with `[postgres_masking_failed] result was not returned` and no partial JSON. Masking changes emitted text only. The SQL sent to PostgreSQL, and the stored rows, stay as they were.
+
+HTTP debug logs record a route class (`mcp`, `sse`, `message`, or `other`), not the request path or query.
+
 ## Read-only boundary and deployment risk
 
 Each database operation uses a PostgreSQL read-only transaction and pgx's extended execution protocol. `postgres_query` is parsed as exactly one SELECT, rejecting DML, DDL, row locks, SELECT INTO, modifying CTEs, and selected PostgreSQL built-ins with known side effects.

@@ -12,7 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// RequestMiddleware logs HTTP requests without query strings.
+// RequestMiddleware logs HTTP requests by route class, without the path or query.
 func RequestMiddleware(next http.Handler) http.Handler {
 	return RequestMiddlewareWithLogger(next, log.Logger)
 }
@@ -35,11 +35,26 @@ func RequestMiddlewareWithLogger(next http.Handler, logger zerolog.Logger) http.
 
 		logger.Debug().
 			Str("method", r.Method).
-			Str("path", r.URL.Path).
+			Str("route", routeClass(r.URL.Path)).
 			Int("status", lrw.statusCode).
 			Dur("duration", time.Since(start)).
 			Msg("handled HTTP request")
 	})
+}
+
+func routeClass(path string) string {
+	switch path {
+	case HealthEndpoint:
+		return "healthz"
+	case MCPEndpoint:
+		return "mcp"
+	case SSEEndpoint:
+		return "sse"
+	case SSEMessageEndpoint:
+		return "message"
+	default:
+		return "other"
+	}
 }
 
 type loggingResponseWriter struct {

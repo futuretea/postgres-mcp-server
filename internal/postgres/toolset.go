@@ -3,10 +3,12 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/futuretea/postgres-mcp-server/pkg/core/masking"
 	"github.com/futuretea/postgres-mcp-server/pkg/toolset"
 )
 
@@ -19,7 +21,7 @@ type handlerService interface {
 	ListTables(context.Context, string) (map[string]any, error)
 	DescribeTable(context.Context, string, string) (map[string]any, error)
 	ListIndexes(context.Context, string, string) (map[string]any, error)
-	Query(context.Context, string) (map[string]any, error)
+	queryResultView(context.Context, string) (queryResultView, error)
 }
 
 // Toolset contains the PostgreSQL MCP tool definitions. A nil Service is
@@ -27,10 +29,27 @@ type handlerService interface {
 // describe, and execution paths construct a Service before calling a handler.
 type Toolset struct {
 	service handlerService
+	policy  masking.Policy
 }
 
 func NewToolset(service handlerService) *Toolset {
-	return &Toolset{service: service}
+	return &Toolset{service: service, policy: masking.Disabled()}
+}
+
+// SetPolicy installs the startup masking policy. Handlers read it when called.
+func (t *Toolset) SetPolicy(policy masking.Policy) {
+	if t == nil {
+		return
+	}
+	t.policy = policy
+}
+
+func (t *Toolset) activeMask() masker {
+	var budget *masking.Budget
+	if t.policy.Enabled() {
+		budget = &masking.Budget{}
+	}
+	return masker{policy: t.policy, budget: budget}
 }
 
 func (t *Toolset) GetName() string { return postgresDomain }
@@ -62,10 +81,7 @@ func (t *Toolset) GetTools() []toolset.ServerTool {
 			schema, table := params["schema"].(string), params["table"].(string)
 			return t.call(ctx, func(service handlerService) (map[string]any, error) { return service.ListIndexes(ctx, schema, table) })
 		}),
-		t.newTool("postgres_query", "Run one strict read-only SELECT query", []string{"sql"}, func(ctx context.Context, params map[string]any) (map[string]any, error) {
-			sql := params["sql"].(string)
-			return t.call(ctx, func(service handlerService) (map[string]any, error) { return service.Query(ctx, sql) })
-		}),
+		t.newQueryTool(),
 	}
 }
 
@@ -75,13 +91,76 @@ func (t *Toolset) newTool(name, description string, required []string, call func
 		Domain:                postgresDomain,
 		NormalizeRawArguments: func(raw any) (map[string]any, error) { return DecodeToolParams(name, raw) },
 		Handler: func(ctx context.Context, params map[string]any) (string, error) {
-			data, err := call(ctx, params)
-			if err != nil {
-				return "", err
-			}
-			return EncodeToolResult(name, data)
+			return t.guard(func() (string, error) {
+				data, err := call(ctx, params)
+				return t.emit(name, data, nil, err)
+			})
 		},
 	}
+}
+
+func (t *Toolset) newQueryTool() toolset.ServerTool {
+	const name = "postgres_query"
+	return toolset.ServerTool{
+		Tool:                  mcp.NewToolWithRawSchema(name, "Run one strict read-only SELECT query", schemaFor([]string{"sql"})),
+		Domain:                postgresDomain,
+		NormalizeRawArguments: func(raw any) (map[string]any, error) { return DecodeToolParams(name, raw) },
+		Handler: func(ctx context.Context, params map[string]any) (string, error) {
+			return t.guard(func() (string, error) {
+				if t.service == nil {
+					return t.emit(name, nil, nil, connectionError())
+				}
+				view, err := t.service.queryResultView(ctx, params["sql"].(string))
+				return t.emit(name, nil, &view, err)
+			})
+		},
+	}
+}
+
+func (t *Toolset) guard(call func() (string, error)) (text string, err error) {
+	if t.policy.Enabled() {
+		defer func() {
+			if recover() != nil {
+				text = ""
+				err = maskingFailed()
+			}
+		}()
+	}
+	return call()
+}
+
+func (t *Toolset) emit(toolName string, data map[string]any, view *queryResultView, callErr error) (string, error) {
+	if callErr != nil {
+		return "", t.public(callErr)
+	}
+	var err error
+	if view != nil {
+		data, err = materializeQuery(t.activeMask(), *view)
+	} else if t.policy.Enabled() {
+		data, err = maskToolData(t.activeMask(), toolName, data)
+	}
+	if err != nil {
+		return "", maskingFailed()
+	}
+	text, err := EncodeToolResult(toolName, data)
+	if err != nil {
+		return "", t.public(err)
+	}
+	if t.policy.Enabled() && len(text) > maxMaskedResultBytes {
+		return "", maskingFailed()
+	}
+	return text, nil
+}
+
+func (t *Toolset) public(err error) error {
+	if err == nil || !t.policy.Enabled() {
+		return err
+	}
+	var safe safeError
+	if errors.As(err, &safe) {
+		return safe
+	}
+	return maskingFailed()
 }
 
 func (t *Toolset) call(_ context.Context, call func(handlerService) (map[string]any, error)) (map[string]any, error) {

@@ -81,12 +81,20 @@ func loadCLIConfig(cmd *cobra.Command, cfgFile string, v *viper.Viper) (*config.
 	return cfg, nil
 }
 
-func defaultToolsets(service *postgres.Service) []toolset.Toolset {
-	return []toolset.Toolset{postgres.NewToolset(service)}
+func defaultToolsets(service *postgres.Service, cfg *config.StaticConfig) ([]toolset.Toolset, error) {
+	created := postgres.NewToolset(service)
+	if cfg != nil {
+		created.SetPolicy(cfg.Masking)
+	}
+	return []toolset.Toolset{created}, nil
 }
 
 func buildToolCatalog(cfg *config.StaticConfig) ([]toolset.ServerTool, error) {
-	return toolcatalog.Build(defaultToolsets(nil), toolset.FilterOptions{
+	toolsets, err := defaultToolsets(nil, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return toolcatalog.Build(toolsets, toolset.FilterOptions{
 		EnabledTools:    cfg.EnabledTools,
 		DisabledTools:   cfg.DisabledTools,
 		EnabledDomains:  cfg.EnabledDomains,
