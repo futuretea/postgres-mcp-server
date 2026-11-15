@@ -33,7 +33,6 @@ const (
 type integrationFixture struct {
 	major     int
 	readerURL string
-	host      string
 	dangers   []integrationRole
 }
 
@@ -106,10 +105,6 @@ CREATE ROLE mcp_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREP
 	execFixture(t, appAdmin, "sentinel", `INSERT INTO mcp_probe.widgets (id, name) VALUES (1, `+sqlLiteral(integrationSentinel)+`)`)
 
 	readerURL := integrationURL(adminURL, "mcp_reader", integrationPassword, integrationDatabase)
-	parsed, err := url.Parse(readerURL)
-	if err != nil {
-		t.Fatalf("reader URL: %v", err)
-	}
 	dangers := make([]integrationRole, 0, len(roles))
 	for _, role := range roles {
 		dangers = append(dangers, integrationRole{
@@ -117,7 +112,7 @@ CREATE ROLE mcp_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREP
 			url:  integrationURL(adminURL, role.name, integrationPassword, integrationDatabase),
 		})
 	}
-	return integrationFixture{major: major, readerURL: readerURL, host: parsed.Hostname(), dangers: dangers}
+	return integrationFixture{major: major, readerURL: readerURL, dangers: dangers}
 }
 
 type dangerousRole struct {
@@ -295,10 +290,12 @@ func assertServerInfo(t *testing.T, fixture integrationFixture, data map[string]
 	if err != nil || major/10000 != fixture.major {
 		t.Fatalf("server_version_num = %#v, want major %d", data["server_version_num"], fixture.major)
 	}
+	host, _ := data["host"].(string)
 	port, _ := data["port"].(string)
-	t.Logf("server_version=%s server_version_num=%s port=%s", versionText, versionNum, port)
-	if data["database"] != integrationDatabase || data["user"] != user || data["host"] != fixture.host || port == "" {
-		t.Fatalf("server info = %#v, want database %s user %s host %s", data, integrationDatabase, user, fixture.host)
+	t.Logf("server_version=%s server_version_num=%s host=%s port=%s", versionText, versionNum, host, port)
+	// A published container port reports the container address, not the dial host.
+	if data["database"] != integrationDatabase || data["user"] != user || host == "" || port == "" {
+		t.Fatalf("server info = %#v, want database %s user %s and a TCP host and port", data, integrationDatabase, user)
 	}
 }
 
