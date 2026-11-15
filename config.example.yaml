@@ -1,9 +1,16 @@
+# Server settings only. Precedence is an explicit flag, then the MCP_*
+# environment variable, then this file, then the default. A flag you do not
+# pass does not block the environment or this file.
+# port 0 is stdio. MCP_PORT is this HTTP port. The database port is
+# MCP_POSTGRES_PORT and does not belong in this file.
 port: 0
 listen: 127.0.0.1
 sse_base_url: ""
 log_level: info
 # Database connection configuration is execution-only. Do not put a host,
 # password, or connection URL in this file.
+# Empty enable lists allow every tool and domain. MCP_ENABLED_TOOLS and the
+# other list variables are comma-separated. The only domain is postgres.
 enabled_tools: []
 disabled_tools: []
 enabled_domains: []
