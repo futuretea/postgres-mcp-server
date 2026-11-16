@@ -1,6 +1,9 @@
-# Server settings only. Precedence is an explicit flag, then the MCP_*
-# environment variable, then this file, then the default. A flag you do not
-# pass does not block the environment or this file.
+# Server settings only. Precedence is an explicit flag, then a non-empty
+# MCP_* environment variable, then this file, then the default. AutomaticEnv
+# does not treat an empty variable as set. A flag you do not pass does not
+# block the environment or this file. MCP_MASKING_JSON is separate: LoadConfig
+# reads it with LookupEnv, and a present empty or whitespace-only value is
+# invalid.
 # port 0 is stdio. MCP_PORT is this HTTP port. The database port is
 # MCP_POSTGRES_PORT and does not belong in this file.
 port: 0

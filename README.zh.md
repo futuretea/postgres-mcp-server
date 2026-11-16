@@ -264,7 +264,7 @@ export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
 
 版本检查读取 `server_version_num`，低于 `140000` 时以 `[postgres_unsupported_server_version] PostgreSQL 14 or later is required` 失败。打开不安全角色设置时，这项检查仍然执行。被拒绝的角色以 `[postgres_unsafe_service_role] database service role is not permitted` 失败。集成测试夹具只接受 `postgres:14-alpine` 和 `postgres:17-alpine`。`make test-integration` 会拒绝其它 `POSTGRES_IMAGE`。GitHub 测试作业会跑这两个镜像。
 
-若无法提供这样的角色，可设置 `allow_unsafe_database_role: true`（环境变量为 `MCP_ALLOW_UNSAFE_DATABASE_ROLE=true`）只跳过这一项角色检查。字符串值由 `strconv.ParseBool` 解析。真值是 `1`、`t`、`T`、`true`、`TRUE` 和 `True`。假值是 `0`、`f`、`F`、`false`、`FALSE` 和 `False`。空的环境变量值是 false。其它文本，包括 `yes` 和 `on`，都会让启动失败。这项设置没有命令行 flag。服务仍会把每条语句包在只读事务里，但角色层面的保证不再成立：superuser 能读取你本不想暴露的表、读取服务端文件、执行只读事务约束不到的服务端程序，`BYPASSRLS` 角色会看穿行级安全策略。仅对你掌控的数据库启用。
+若无法提供这样的角色，可设置 `allow_unsafe_database_role: true`（环境变量为 `MCP_ALLOW_UNSAFE_DATABASE_ROLE=true`）只跳过这一项角色检查。非空字符串由 `strconv.ParseBool` 解析。真值是 `1`、`t`、`T`、`true`、`TRUE` 和 `True`。假值是 `0`、`f`、`F`、`false`、`FALSE` 和 `False`。空的 `MCP_ALLOW_UNSAFE_DATABASE_ROLE` 不是一个值。YAML `true` 仍是 true。只有文件没有设置该键时，才使用默认值 `false`。非空的假值，包括 `0`，会把 YAML `true` 覆盖为 false。其它文本，包括 `yes`、`on`、`2` 和空格，都会让启动失败。这项设置没有命令行 flag。服务仍会把每条语句包在只读事务里，但角色层面的保证不再成立：superuser 能读取你本不想暴露的表、读取服务端文件、执行只读事务约束不到的服务端程序，`BYPASSRLS` 角色会看穿行级安全策略。仅对你掌控的数据库启用。
 
 ### 创建只读服务角色
 
@@ -385,7 +385,7 @@ HTTP transport 没有认证或 TLS。默认只监听 loopback。若通过 `--lis
 
 `GET /healthz` 和 `HEAD /healthz` 是健康检查端点。transport 和工具过滤配置见 [`config.example.yaml`](config.example.yaml)。数据库连接仍只从环境变量读取。
 
-显式 flag 覆盖同一设置的环境变量。环境变量覆盖 YAML。YAML 覆盖默认值。未传入的 flag 不会挡住环境变量或配置文件。
+显式 flag 覆盖同一设置的非空环境变量。非空环境变量覆盖 YAML。YAML 覆盖默认值。未传入的 flag 不会挡住环境变量或配置文件。此加载器使用 Viper `AutomaticEnv`，并且没有调用 `AllowEmptyEnv`，因此空的环境变量视为不存在。它会留下 YAML 的值；文件没有该值时使用默认值。`MCP_MASKING_JSON` 是例外。`LoadConfig` 用 `LookupEnv` 读取它。变量存在但为空或只含空白时无效，不会留下 YAML 对象。
 
 | YAML 键 | Flag | 环境变量 | 默认值 |
 |---|---|---|---|
