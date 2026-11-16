@@ -189,7 +189,7 @@ docker run --rm \
 
 Streamable HTTP 客户端使用 `http://127.0.0.1:8080/mcp`。该传输不保存会话，也不返回 session id。SSE 客户端使用 `http://127.0.0.1:8080/sse`，并向 `/message` 发送消息。SSE 响应会把原始请求的 query 追加到消息端点 URL。
 
-进程在提供服务时，`GET /healthz` 和 `HEAD /healthz` 返回 `200`，正文是 `healthy`。其它方法返回 `405`。
+进程在提供服务时，`GET /healthz` 返回 `200`，正文是 `healthy`。`HEAD /healthz` 返回 `200`，正文为空，并且 `Content-Length` 为 7。其它方法返回 `405`。
 
 HTTP 没有认证或 TLS。服务不检查 authorization header、API key 或客户端证书。只能部署在可信网络，或置于同时提供认证和 TLS 的基础设施之后。
 
@@ -264,7 +264,7 @@ export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
 
 版本检查读取 `server_version_num`，低于 `140000` 时以 `[postgres_unsupported_server_version] PostgreSQL 14 or later is required` 失败。打开不安全角色设置时，这项检查仍然执行。被拒绝的角色以 `[postgres_unsafe_service_role] database service role is not permitted` 失败。集成测试夹具只接受 `postgres:14-alpine` 和 `postgres:17-alpine`。`make test-integration` 会拒绝其它 `POSTGRES_IMAGE`。GitHub 测试作业会跑这两个镜像。
 
-若无法提供这样的角色，可设置 `allow_unsafe_database_role: true`（环境变量为 `MCP_ALLOW_UNSAFE_DATABASE_ROLE=true`）只跳过这一项角色检查。`true`、`TRUE` 和 `1` 会跳过检查。`false` 保持检查开启。这项设置没有命令行 flag。服务仍会把每条语句包在只读事务里，但角色层面的保证不再成立：superuser 能读取你本不想暴露的表、读取服务端文件、执行只读事务约束不到的服务端程序，`BYPASSRLS` 角色会看穿行级安全策略。仅对你掌控的数据库启用。
+若无法提供这样的角色，可设置 `allow_unsafe_database_role: true`（环境变量为 `MCP_ALLOW_UNSAFE_DATABASE_ROLE=true`）只跳过这一项角色检查。字符串值由 `strconv.ParseBool` 解析。真值是 `1`、`t`、`T`、`true`、`TRUE` 和 `True`。假值是 `0`、`f`、`F`、`false`、`FALSE` 和 `False`。空的环境变量值是 false。其它文本，包括 `yes` 和 `on`，都会让启动失败。这项设置没有命令行 flag。服务仍会把每条语句包在只读事务里，但角色层面的保证不再成立：superuser 能读取你本不想暴露的表、读取服务端文件、执行只读事务约束不到的服务端程序，`BYPASSRLS` 角色会看穿行级安全策略。仅对你掌控的数据库启用。
 
 ### 创建只读服务角色
 
@@ -318,13 +318,15 @@ WHERE rolname = current_user;
 
 ## 输出脱敏
 
-未配置 `masking`，或 `enabled` 省略、为 false 时，脱敏关闭，工具输出保持原有文本。只有 `enabled: true` 且至少有一条规则时才会启用。环境变量 `MCP_MASKING_JSON` 只要存在，就整份替换 YAML 里的 `masking` 对象。空值无效。未设置该变量时仍使用 YAML。
+未配置 `masking`，或 `enabled` 省略、为 false 时，脱敏关闭，工具输出保持原有文本。只有 `enabled: true` 且至少有一条规则时才会启用。环境变量 `MCP_MASKING_JSON` 只要存在，就整份替换 YAML 里的 `masking` 对象。`ParseJSON` 只解析这个值。空值或只含空白的值无效。未设置该变量时仍使用 YAML。
 
-空文档、未知字段，以及 `enabled: true` 但没有任何规则，都会让进程启动失败。错误文本是 `invalid masking config`，不包含配置原文。
+未知字段，以及 `enabled: true` 但没有任何规则，都会让进程启动失败。错误文本是 `invalid masking config`，不包含配置原文。`{}` 有效，并且保持脱敏关闭。
 
 `names`、`name_patterns`、`values` 和 `value_patterns` 各自最多 32 项。名字最多 128 字节。值字面量最多 256 字节。模式最多 128 字节。空项无效。占位符为 1 到 64 字节，默认是 `[masked]`。精确的 `names` 区分大小写。
 
-脱敏开启时，一次结果最多访问 10000 个节点，单次扫描的输入最多 1 MiB，编码后的 JSON 结果最多 1 MiB。失败时返回 `[postgres_masking_failed] result was not returned`，不会返回半份 JSON。未知工具名会报告为 `[postgres_invalid_params] invalid parameters`，因此错误不会回显该名字。
+脱敏开启时，一次结果最多访问 10000 个节点，单次扫描的输入最多 1 MiB，编码后的 JSON 结果最多 1 MiB（`maxMaskedResultBytes`）。超过该编码 JSON 上限时，调用失败并返回 `[postgres_masking_failed] result was not returned`，不会返回半份 JSON。脱敏关闭时，结果没有响应大小限制。
+
+只有 CLI 的 `tools describe` 和 `tools call` 会在脱敏开启时隐去不在启用目录中的名字，包括被过滤的名字。错误是 `[postgres_invalid_params] invalid parameters`，不包含该名字。脱敏关闭时，这两条命令返回 `unknown tool "<name>"; run 'postgres-mcp-server tools list' to see available tools`。MCP `tools/call` 不走这条检查。缺失或被过滤的名字返回 `tool '<name>' not found: tool not found`，其中包含该名字。
 
 ```yaml
 masking:
@@ -366,7 +368,7 @@ HTTP 调试日志只记录路由类别（`mcp`、`sse`、`message` 或 `other`�
 
 这不是对所有用户函数、扩展、FDW 或未来 PostgreSQL 内建函数无副作用的完整证明。数据库账号只应授予该服务确实需要的权限。
 
-HTTP transport 没有认证或 TLS。默认只监听 loopback。若通过 `--listen` 监听远程地址，只能部署在可信网络中，或放在提供所需保护的基础设施之后。本服务刻意不提供查询超时、行数限制、响应大小限制或并发预算。
+HTTP transport 没有认证或 TLS。默认只监听 loopback。若通过 `--listen` 监听远程地址，只能部署在可信网络中，或放在提供所需保护的基础设施之后。本服务不设置查询超时、行数限制或并发预算。脱敏关闭时，也不设置响应大小限制。脱敏开启时，编码后的 JSON 结果大于 1 MiB 不会返回。调用失败并返回 `[postgres_masking_failed] result was not returned`。
 
 ## 运行 MCP 与 HTTP
 

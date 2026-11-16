@@ -189,7 +189,7 @@ docker run --rm \
 
 Streamable HTTP clients use `http://127.0.0.1:8080/mcp`. That transport stores no session and returns no session id. SSE clients use `http://127.0.0.1:8080/sse` and post to `/message`. The SSE response appends the original request query to the message endpoint URL.
 
-`GET /healthz` and `HEAD /healthz` return `200` and the body `healthy` while the process is serving. Any other method returns `405`.
+While the process is serving, `GET /healthz` returns `200` and the body `healthy`. `HEAD /healthz` returns `200`, an empty body, and `Content-Length: 7`. Any other method returns `405`.
 
 HTTP has no authentication or TLS. The server does not check an authorization header, an API key, or a client certificate. Keep it on a trusted network or place it behind infrastructure that provides both.
 
@@ -264,7 +264,7 @@ At startup the server requires PostgreSQL 14 or newer and rejects service roles 
 
 The version check reads `server_version_num` and rejects a value below `140000` with `[postgres_unsupported_server_version] PostgreSQL 14 or later is required`. That check still runs when the unsafe-role setting is on. A rejected role fails with `[postgres_unsafe_service_role] database service role is not permitted`. The integration fixture accepts `postgres:14-alpine` and `postgres:17-alpine` only. `make test-integration` rejects any other `POSTGRES_IMAGE`. The GitHub test job runs both images.
 
-If you cannot provision such a role, set `allow_unsafe_database_role: true` (`MCP_ALLOW_UNSAFE_DATABASE_ROLE=true` for the environment) to skip only this role check. `true`, `TRUE`, and `1` enable the skip. `false` leaves the check on. There is no command-line flag for this setting. The server still wraps every statement in a read-only transaction, but the role-level guarantee is gone: a superuser role can read tables you did not intend to expose, read server files, and run server-side programs that a read-only transaction does not constrain, and a `BYPASSRLS` role sees through row-level security policies. Enable it only against a database you control.
+If you cannot provision such a role, set `allow_unsafe_database_role: true` (`MCP_ALLOW_UNSAFE_DATABASE_ROLE=true` for the environment) to skip only this role check. A string value is parsed with `strconv.ParseBool`. True values are `1`, `t`, `T`, `true`, `TRUE`, and `True`. False values are `0`, `f`, `F`, `false`, `FALSE`, and `False`. An empty environment value is false. Any other text, including `yes` and `on`, fails startup. There is no command-line flag for this setting. The server still wraps every statement in a read-only transaction, but the role-level guarantee is gone: a superuser role can read tables you did not intend to expose, read server files, and run server-side programs that a read-only transaction does not constrain, and a `BYPASSRLS` role sees through row-level security policies. Enable it only against a database you control.
 
 ### Create a read-only service role
 
@@ -318,13 +318,15 @@ If any value is `true`, use a new dedicated role rather than removing privileges
 
 ## Output masking
 
-Masking is off unless it is explicitly enabled. With no `masking` key, and with `enabled` omitted or false, tool output is the previous text. Set `enabled: true` and at least one rule to turn it on. `MCP_MASKING_JSON`, when the variable is present, replaces the whole YAML `masking` object. An empty value is invalid. Unset leaves the YAML object in place.
+Masking is off unless it is explicitly enabled. With no `masking` key, and with `enabled` omitted or false, tool output is the previous text. Set `enabled: true` and at least one rule to turn it on. `MCP_MASKING_JSON`, when the variable is present, replaces the whole YAML `masking` object. `ParseJSON` only parses that value. An empty or whitespace-only value is invalid. An unset variable leaves the YAML object in place.
 
-Empty documents, unknown fields, and `enabled: true` with no rules fail startup. The error is `invalid masking config` and does not include the document.
+Unknown fields, and `enabled: true` with no rules, fail startup. The error is `invalid masking config` and does not include the document. `{}` is valid and leaves masking off.
 
 Each of `names`, `name_patterns`, `values`, and `value_patterns` allows at most 32 entries. A name is at most 128 bytes. A value literal is at most 256 bytes. A pattern is at most 128 bytes. An empty entry is invalid. The placeholder is 1 to 64 bytes. The default is `[masked]`. Exact `names` are case-sensitive.
 
-When masking is on, one result may visit at most 10000 nodes, one scanned input is at most 1 MiB, and the encoded JSON result is at most 1 MiB. A failure returns `[postgres_masking_failed] result was not returned` and no partial JSON. An unknown tool name is reported as `[postgres_invalid_params] invalid parameters`, so the error does not echo the name.
+When masking is on, one result may visit at most 10000 nodes, one scanned input is at most 1 MiB, and the encoded JSON result is at most 1 MiB (`maxMaskedResultBytes`). A result past that encoded-JSON cap fails with `[postgres_masking_failed] result was not returned` and no partial JSON. With masking off, a result has no response-size limit.
+
+CLI `tools describe` and `tools call` hide a name that is absent from the enabled catalog, including a filtered name, only when masking is on. The error is `[postgres_invalid_params] invalid parameters` and does not include the name. With masking off, those commands return `unknown tool "<name>"; run 'postgres-mcp-server tools list' to see available tools`. MCP `tools/call` does not use that check. A missing or filtered name returns `tool '<name>' not found: tool not found`, which includes the name.
 
 ```yaml
 masking:
@@ -366,7 +368,7 @@ Each database operation uses a PostgreSQL read-only transaction and pgx's extend
 
 This is not a complete proof that every user-defined function, extension, FDW, or future PostgreSQL built-in is harmless. Grant only the database access you intend the server to have.
 
-HTTP transports have no authentication or TLS layer. The default listener is loopback. If you set `--listen` to a remote address, place the service only on a trusted network or behind infrastructure that provides the required protection. This server intentionally has no query timeout, row limit, response-size limit, or concurrency budget.
+HTTP transports have no authentication or TLS layer. The default listener is loopback. If you set `--listen` to a remote address, place the service only on a trusted network or behind infrastructure that provides the required protection. This server sets no query timeout, row limit, or concurrency budget. With masking off, it also sets no response-size limit. With masking on, an encoded JSON result larger than 1 MiB is not returned. The call fails with `[postgres_masking_failed] result was not returned`.
 
 ## Running MCP and HTTP
 

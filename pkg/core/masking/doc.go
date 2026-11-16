@@ -3,10 +3,11 @@
 // payload, or encoding.
 //
 // A policy is inactive unless enabled is true and at least one rule is set.
-// Absent configuration is inactive. This server reads MCP_MASKING_JSON in
-// pkg/core/config. When that variable is present, ParseJSON replaces the YAML
-// masking object. An empty value is invalid. An unset variable leaves the YAML
-// object in place.
+// Absent configuration is inactive. ParseJSON only parses one document.
+// config.LoadConfig reads MCP_MASKING_JSON. When that variable is present,
+// LoadConfig replaces the YAML masking object with the parsed policy. An
+// empty or whitespace-only value is invalid. An unset variable leaves the
+// YAML object in place.
 //
 // Name patterns are parsed on their own and then anchored to the whole name
 // in the syntax tree. A pattern such as a)|(b is rejected because it is not a

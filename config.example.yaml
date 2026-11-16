@@ -20,8 +20,9 @@ disabled_domains: []
 # transaction boundary alone. Also readable as MCP_ALLOW_UNSAFE_DATABASE_ROLE.
 allow_unsafe_database_role: false
 # Output masking is off until enabled is true. MCP_MASKING_JSON, when set,
-# replaces this whole object. Empty JSON, unknown fields, and enabled true
-# with no rules are invalid and the error does not include the document.
+# replaces this whole object. ParseJSON only parses the value. An empty or
+# whitespace-only value, unknown fields, and enabled true with no rules are
+# invalid and the error does not include the document.
 # masking:
 #   enabled: true
 #   placeholder: "[masked]"
