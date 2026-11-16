@@ -1,5 +1,9 @@
 # PostgreSQL 只读 MCP Server
 
+[English](README.md)
+
+源码和 issue 在 [GitHub 仓库](https://github.com/futuretea/postgres-mcp-server)。许可证是 [MIT](LICENSE)。
+
 这是一个面向单个 PostgreSQL 14 或更新版本实例的 MCP（Model Context Protocol）服务。它提供数据库目录发现和受限的 SELECT 查询，可通过 stdio 或 HTTP 使用，也提供 CLI。
 
 ## 快速开始
@@ -22,15 +26,42 @@ make build
 
 ## 使用已发布版本
 
-`v0.0.1` 已发布 npm 包和多架构 Docker 镜像。两个发布入口默认都会通过 stdio 启动 MCP。
+[Release v0.4.0](https://github.com/futuretea/postgres-mcp-server/releases/tag/v0.4.0) 是当前 npm 包和当前 GHCR 镜像。npm dist-tag `latest` 与镜像标签 `latest` 都指向该版本。两个发布入口默认都通过 stdio 启动 MCP。
+
+GitHub Release `v0.0.1` 到 `v0.4.0` 都没有附带可执行文件。每个页面有生成的说明，以及该 Git tag 的源码 tarball 和 zipball。预编译程序是 npm 平台包和 GHCR 镜像。也可以从该 tag 自行构建二进制。
+
+本节示例不设置 `DATABASE_URL`，使用分字段连接变量。一旦设置 `DATABASE_URL`，所有 `MCP_POSTGRES_*` 变量都会被忽略。shell 示例使用 POSIX `export`。在 Windows 上，请在进程环境或客户端 `env` 对象里设置同名变量。
 
 ### npm
 
-用 `npx` 运行已发布的包：
+包装包是 [`@futuretea/postgres-mcp-server`](https://www.npmjs.com/package/@futuretea/postgres-mcp-server)。`0.4.0` 发布下列平台包。包装器按 Node 的 `process.platform` 和 `process.arch` 选择其中一个：
+
+| 包 | Node platform | Node arch |
+|---|---|---|
+| `@futuretea/postgres-mcp-server-darwin-amd64` | `darwin` | `x64` |
+| `@futuretea/postgres-mcp-server-darwin-arm64` | `darwin` | `arm64` |
+| `@futuretea/postgres-mcp-server-linux-amd64` | `linux` | `x64` |
+| `@futuretea/postgres-mcp-server-linux-arm64` | `linux` | `arm64` |
+| `@futuretea/postgres-mcp-server-windows-amd64` | `win32` | `x64` |
+
+其它组合会以 `Unsupported platform/architecture: <platform>/<arch>` 停止。匹配的平台包未安装时，包装器以 `Could not resolve binary path for platform/architecture: <platform>/<arch>` 停止。
+
+已发布的 `postgres-mcp-server` 命令总会先插入 `mcp` 子命令，再追加你传入的参数。它不运行 `tools`、`version` 或 `completion`。这些命令在 `make build` 生成的二进制上。它们也在平台包文件 `bin/postgres-mcp-server` 上，Windows 上是 `bin/postgres-mcp-server.exe`。
+
+flag 会被传给 `mcp`。`--help` 打印 `mcp` 帮助，并且不会连接数据库。`version` 这样的位置参数不是另一个子命令。进程仍会启动 `mcp`，并校验数据库连接。
+
+已发布的 `0.4.0` npm 包内的 README 仍固定写着 `v0.0.1`。配置 `0.4.0` 时请使用本文。
+
+本版本请固定 `@0.4.0`。进程在报告 ready 之前会连接数据库，并检查服务端版本和角色：
 
 ```sh
-export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
-npx -y @futuretea/postgres-mcp-server@0.0.1
+export MCP_POSTGRES_HOST=127.0.0.1
+export MCP_POSTGRES_PORT=5432
+export MCP_POSTGRES_DATABASE=app
+export MCP_POSTGRES_USERNAME=reader
+export MCP_POSTGRES_PASSWORD='<runtime-secret>'
+export MCP_POSTGRES_SSLMODE=disable
+npx -y @futuretea/postgres-mcp-server@0.4.0
 ```
 
 MCP 客户端配置示例：
@@ -40,26 +71,47 @@ MCP 客户端配置示例：
   "mcpServers": {
     "postgres-readonly": {
       "command": "npx",
-      "args": ["-y", "@futuretea/postgres-mcp-server@0.0.1"],
+      "args": ["-y", "@futuretea/postgres-mcp-server@0.4.0"],
       "env": {
-        "DATABASE_URL": "postgres://reader@127.0.0.1:5432/app?sslmode=disable"
+        "MCP_POSTGRES_HOST": "127.0.0.1",
+        "MCP_POSTGRES_PORT": "5432",
+        "MCP_POSTGRES_DATABASE": "app",
+        "MCP_POSTGRES_USERNAME": "reader",
+        "MCP_POSTGRES_PASSWORD": "<runtime-secret>",
+        "MCP_POSTGRES_SSLMODE": "disable"
       }
     }
   }
 }
 ```
 
-npm 命令是 MCP 入口，不是服务器其它 CLI 子命令的包装器。请固定为你希望运行的版本。
+该客户端启动一个 stdio 进程。进程通过 stdin 和 stdout 使用 MCP。没有 authorization header、API key 或客户端证书。
+
+`npx -y @futuretea/postgres-mcp-server@0.4.0 --help` 打印 `mcp` 帮助，不会打开数据库连接。
 
 ### Docker
 
-直接运行已发布的镜像：
+镜像仓库是 [`ghcr.io/futuretea/postgres-mcp-server`](https://github.com/futuretea/postgres-mcp-server/pkgs/container/postgres-mcp-server)。标签 `v0.4.0` 和 `latest` 是同一个镜像索引。可运行平台是 `linux/amd64` 和 `linux/arm64`。索引里还有构建 attestation manifest。那些条目不是可运行镜像。
+
+已发布镜像以用户 `mcp` 运行。入口是 `/usr/local/bin/postgres-mcp-server mcp`。镜像名后面的参数是 `mcp` 的 flag。
+
+数据库主机名必须能从容器访问。容器内的 `localhost` 不是宿主机。请使用 Docker 网络内的数据库主机名；数据库在宿主机上时，使用平台对应的宿主机网关。下面的远程示例设置 `sslmode=require`。请按部署环境需要设置 PostgreSQL TLS 模式和证书。
 
 ```sh
-export DATABASE_URL='postgres://reader@db.example.internal:5432/app?sslmode=require'
+export MCP_POSTGRES_HOST=db.example.internal
+export MCP_POSTGRES_PORT=5432
+export MCP_POSTGRES_DATABASE=app
+export MCP_POSTGRES_USERNAME=reader
+export MCP_POSTGRES_PASSWORD='<runtime-secret>'
+export MCP_POSTGRES_SSLMODE=require
 docker run --rm -i \
-  --env DATABASE_URL \
-  ghcr.io/futuretea/postgres-mcp-server:v0.0.1
+  --env MCP_POSTGRES_HOST \
+  --env MCP_POSTGRES_PORT \
+  --env MCP_POSTGRES_DATABASE \
+  --env MCP_POSTGRES_USERNAME \
+  --env MCP_POSTGRES_PASSWORD \
+  --env MCP_POSTGRES_SSLMODE \
+  ghcr.io/futuretea/postgres-mcp-server:v0.4.0
 ```
 
 若 MCP 客户端通过 Docker 启动服务，把连接配置传递给 Docker 进程：
@@ -74,42 +126,76 @@ docker run --rm -i \
         "--rm",
         "-i",
         "--env",
-        "DATABASE_URL",
-        "ghcr.io/futuretea/postgres-mcp-server:v0.0.1"
+        "MCP_POSTGRES_HOST",
+        "--env",
+        "MCP_POSTGRES_PORT",
+        "--env",
+        "MCP_POSTGRES_DATABASE",
+        "--env",
+        "MCP_POSTGRES_USERNAME",
+        "--env",
+        "MCP_POSTGRES_PASSWORD",
+        "--env",
+        "MCP_POSTGRES_SSLMODE",
+        "ghcr.io/futuretea/postgres-mcp-server:v0.4.0"
       ],
       "env": {
-        "DATABASE_URL": "postgres://reader@db.example.internal:5432/app?sslmode=require"
+        "MCP_POSTGRES_HOST": "db.example.internal",
+        "MCP_POSTGRES_PORT": "5432",
+        "MCP_POSTGRES_DATABASE": "app",
+        "MCP_POSTGRES_USERNAME": "reader",
+        "MCP_POSTGRES_PASSWORD": "<runtime-secret>",
+        "MCP_POSTGRES_SSLMODE": "require"
       }
     }
   }
 }
 ```
 
-数据库主机名必须能从容器访问。容器内的 `localhost` 不是宿主机；请使用 Docker 网络内的数据库主机名，或在适用时使用平台对应的宿主机网关。
-
-Docker 示例使用远程数据库时采用 `sslmode=require`。请按部署环境需要设置 PostgreSQL TLS 模式和证书。
-
 ### HTTP 模式
 
-在发布命令后传入 MCP 参数，就会启动 HTTP 而不是 stdio。直接运行时默认监听 loopback：
+在发布命令后传入 MCP 参数，就会启动 HTTP 而不是 stdio。直接在宿主机运行时，默认监听 loopback。进程在报告 ready 之前仍会连接数据库：
 
 ```sh
-export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
-npx -y @futuretea/postgres-mcp-server@0.0.1 --port 8080
+export MCP_POSTGRES_HOST=127.0.0.1
+export MCP_POSTGRES_PORT=5432
+export MCP_POSTGRES_DATABASE=app
+export MCP_POSTGRES_USERNAME=reader
+export MCP_POSTGRES_PASSWORD='<runtime-secret>'
+export MCP_POSTGRES_SSLMODE=disable
+npx -y @futuretea/postgres-mcp-server@0.4.0 --port 8080
 ```
 
-Docker 中服务必须监听容器的全部接口；宿主机发布端口仍可只绑定 loopback：
+Docker 中服务必须监听容器的全部接口。宿主机发布端口仍可只绑定 loopback：
 
 ```sh
-export DATABASE_URL='postgres://reader@db.example.internal:5432/app?sslmode=require'
+export MCP_POSTGRES_HOST=db.example.internal
+export MCP_POSTGRES_PORT=5432
+export MCP_POSTGRES_DATABASE=app
+export MCP_POSTGRES_USERNAME=reader
+export MCP_POSTGRES_PASSWORD='<runtime-secret>'
+export MCP_POSTGRES_SSLMODE=require
 docker run --rm \
-  --env DATABASE_URL \
+  --env MCP_POSTGRES_HOST \
+  --env MCP_POSTGRES_PORT \
+  --env MCP_POSTGRES_DATABASE \
+  --env MCP_POSTGRES_USERNAME \
+  --env MCP_POSTGRES_PASSWORD \
+  --env MCP_POSTGRES_SSLMODE \
   --publish 127.0.0.1:8080:8080 \
-  ghcr.io/futuretea/postgres-mcp-server:v0.0.1 \
+  ghcr.io/futuretea/postgres-mcp-server:v0.4.0 \
   --port 8080 --listen 0.0.0.0
 ```
 
-Streamable HTTP MCP 客户端使用 `http://127.0.0.1:8080/mcp`。服务也提供 `/sse`（消息端点 `/message`）和健康检查 `GET /healthz`。HTTP 没有认证或 TLS；只能部署在可信网络，或置于同时提供认证和 TLS 的基础设施之后。
+Streamable HTTP 客户端使用 `http://127.0.0.1:8080/mcp`。该传输不保存会话，也不返回 session id。SSE 客户端使用 `http://127.0.0.1:8080/sse`，并向 `/message` 发送消息。SSE 响应会把原始请求的 query 追加到消息端点 URL。
+
+进程在提供服务时，`GET /healthz` 返回 `200`，正文是 `healthy`。`HEAD /healthz` 返回 `200`，正文为空，并且 `Content-Length` 为 7。其它方法返回 `405`。
+
+HTTP 没有认证或 TLS。服务不检查 authorization header、API key 或客户端证书。只能部署在可信网络，或置于同时提供认证和 TLS 的基础设施之后。
+
+HTTP 服务的读头超时是 5 秒，读超时是 30 秒，没有写超时，空闲超时是 120 秒。这些不是 SQL 语句超时。
+
+`--sse-base-url` 设置 SSE 消息端点的公开 base URL。该值必须是带 host、且没有 query string 的绝对 `http` 或 `https` URL。不符合的值会被忽略，base URL 保持为空。客户端可以使用请求 host 时，不要设置该 flag。
 
 ## 工具
 
@@ -123,7 +209,21 @@ Streamable HTTP MCP 客户端使用 `http://127.0.0.1:8080/mcp`。服务也提�
 | `postgres_list_indexes` | `schema`、`table` | 列出表索引。 |
 | `postgres_query` | `sql` | 执行一条严格只读 SELECT。 |
 
-所有成功响应都是一个 JSON text envelope，固定含有 `schema_version`、`tool` 和 `data`。参数必须是没有未知字段的 JSON object。无参数工具必须传 `{}`；缺失、`null`、数组和标量都会被拒绝。
+所有成功响应都是一个 JSON text envelope，固定含有 `schema_version`、`tool` 和 `data`。`schema_version` 是数字 `1`。参数必须是没有未知字段的 JSON object。无参数工具必须传 `{}`。缺失、`null`、数组和标量都会被拒绝。
+
+### 结果字段
+
+| 工具 | `data` |
+|---|---|
+| `postgres_get_server_info` | `server_version`、`server_version_num`、`database`、`user`、`host`、`port` |
+| `postgres_list_databases` | `databases`，每项含 `name`、`owner`、`encoding` |
+| `postgres_list_schemas` | `schemas`，每项含 `name` |
+| `postgres_list_tables` | `schema`，以及 `tables`，每项含 `name`、`kind` |
+| `postgres_describe_table` | `schema`、`table`，以及 `columns`，每项含 `ordinal_position`、`name`、`postgres_type`、`nullable`、`default`、`identity`、`generated` |
+| `postgres_list_indexes` | `schema`、`table`，以及 `indexes`，每项含 `name`、`definition` |
+| `postgres_query` | `columns`，每项含 `name`、`postgres_type`，以及作为单元格值数组的 `rows` |
+
+脱敏关闭时，查询单元格和大多数元数据字段是 PostgreSQL 文本；SQL 值为 null 时对应 JSON null。`ordinal_position` 是 JSON number。`nullable` 是 JSON boolean。`inet_server_addr()` 为 null 时，`host` 和 `port` 为 null。列不是 identity 列时，`identity` 为 null。列不是 generated 列时，`generated` 为 null。
 
 ## 数据库连接
 
@@ -162,7 +262,9 @@ export DATABASE_URL='postgres://reader@127.0.0.1:5432/app?sslmode=disable'
 
 服务启动时要求 PostgreSQL 14 或更新版本，并拒绝 superuser、可绕过行级安全、具备复制权限，或属于服务端文件、服务端程序、后端信号角色的服务账号。请使用独立的最小权限数据库角色。
 
-若无法提供这样的角色，可设置 `allow_unsafe_database_role: true`（环境变量为 `MCP_ALLOW_UNSAFE_DATABASE_ROLE=true`）只跳过这一项角色检查。服务仍会把每条语句包在只读事务里，但角色层面的保证不再成立：superuser 能读取你本不想暴露的表、读取服务端文件、执行只读事务约束不到的服务端程序，`BYPASSRLS` 角色会看穿行级安全策略。仅对你掌控的数据库启用。
+版本检查读取 `server_version_num`，低于 `140000` 时以 `[postgres_unsupported_server_version] PostgreSQL 14 or later is required` 失败。打开不安全角色设置时，这项检查仍然执行。被拒绝的角色以 `[postgres_unsafe_service_role] database service role is not permitted` 失败。集成测试夹具只接受 `postgres:14-alpine` 和 `postgres:17-alpine`。`make test-integration` 会拒绝其它 `POSTGRES_IMAGE`。GitHub 测试作业会跑这两个镜像。
+
+若无法提供这样的角色，可设置 `allow_unsafe_database_role: true`（环境变量为 `MCP_ALLOW_UNSAFE_DATABASE_ROLE=true`）只跳过这一项角色检查。非空字符串由 `strconv.ParseBool` 解析。真值是 `1`、`t`、`T`、`true`、`TRUE` 和 `True`。假值是 `0`、`f`、`F`、`false`、`FALSE` 和 `False`。空的 `MCP_ALLOW_UNSAFE_DATABASE_ROLE` 不是一个值。YAML `true` 仍是 true。只有文件没有设置该键时，才使用默认值 `false`。非空的假值，包括 `0`，会把 YAML `true` 覆盖为 false。其它文本，包括 `yes`、`on`、`2` 和空格，都会让启动失败。这项设置没有命令行 flag。服务仍会把每条语句包在只读事务里，但角色层面的保证不再成立：superuser 能读取你本不想暴露的表、读取服务端文件、执行只读事务约束不到的服务端程序，`BYPASSRLS` 角色会看穿行级安全策略。仅对你掌控的数据库启用。
 
 ### 创建只读服务角色
 
@@ -216,9 +318,15 @@ WHERE rolname = current_user;
 
 ## 输出脱敏
 
-未配置 `masking`，或 `enabled` 省略、为 false 时，脱敏关闭，工具输出保持原有文本。只有 `enabled: true` 且至少有一条规则时才会启用。环境变量 `MCP_MASKING_JSON` 只要存在，就整份替换 YAML 里的 `masking` 对象。空值无效。未设置该变量时仍使用 YAML。
+未配置 `masking`，或 `enabled` 省略、为 false 时，脱敏关闭，工具输出保持原有文本。只有 `enabled: true` 且至少有一条规则时才会启用。环境变量 `MCP_MASKING_JSON` 只要存在，就整份替换 YAML 里的 `masking` 对象。`ParseJSON` 只解析这个值。空值或只含空白的值无效。未设置该变量时仍使用 YAML。
 
-空文档、未知字段，以及 `enabled: true` 但没有任何规则，都会让进程启动失败。错误文本是 `invalid masking config`，不包含配置原文。
+未知字段，以及 `enabled: true` 但没有任何规则，都会让进程启动失败。错误文本是 `invalid masking config`，不包含配置原文。`{}` 有效，并且保持脱敏关闭。
+
+`names`、`name_patterns`、`values` 和 `value_patterns` 各自最多 32 项。名字最多 128 字节。值字面量最多 256 字节。模式最多 128 字节。空项无效。占位符为 1 到 64 字节，默认是 `[masked]`。精确的 `names` 区分大小写。
+
+脱敏开启时，一次结果最多访问 10000 个节点，单次扫描的输入最多 1 MiB，编码后的 JSON 结果最多 1 MiB（`maxMaskedResultBytes`）。超过该编码 JSON 上限时，调用失败并返回 `[postgres_masking_failed] result was not returned`，不会返回半份 JSON。脱敏关闭时，结果没有响应大小限制。
+
+只有 CLI 的 `tools describe` 和 `tools call` 会在脱敏开启时隐去不在启用目录中的名字，包括被过滤的名字。错误是 `[postgres_invalid_params] invalid parameters`，不包含该名字。脱敏关闭时，这两条命令返回 `unknown tool "<name>"; run 'postgres-mcp-server tools list' to see available tools`。MCP `tools/call` 不走这条检查。缺失或被过滤的名字返回 `tool '<name>' not found: tool not found`，其中包含该名字。
 
 ```yaml
 masking:
@@ -256,11 +364,11 @@ HTTP 调试日志只记录路由类别（`mcp`、`sse`、`message` 或 `other`�
 
 ## 只读边界与部署风险
 
-每次数据库操作都在 PostgreSQL read-only transaction 和 pgx extended execution protocol 中执行。`postgres_query` 会解析为恰好一条 SELECT，并拒绝 DML、DDL、行锁、SELECT INTO、修改型 CTE 以及一组已知有副作用的 PostgreSQL 内建函数。
+每次数据库操作都在 PostgreSQL read-only transaction 和 pgx extended execution protocol 中执行。`postgres_query` 会解析为恰好一条 SELECT，并拒绝 DML、DDL、行锁、SELECT INTO、修改型 CTE 以及一组已知有副作用的 PostgreSQL 内建函数。被拒绝的语句返回 `[postgres_query_rejected] query is not an allowed SELECT statement`。被拒绝的内建函数名和前缀是 [`internal/postgres/strict_select.go`](internal/postgres/strict_select.go) 里的固定列表。
 
 这不是对所有用户函数、扩展、FDW 或未来 PostgreSQL 内建函数无副作用的完整证明。数据库账号只应授予该服务确实需要的权限。
 
-HTTP transport 没有认证或 TLS。默认只监听 loopback。若通过 `--listen` 监听远程地址，只能部署在可信网络中，或放在提供所需保护的基础设施之后。本服务刻意不提供查询超时、行数限制、响应大小限制或并发预算。
+HTTP transport 没有认证或 TLS。默认只监听 loopback。若通过 `--listen` 监听远程地址，只能部署在可信网络中，或放在提供所需保护的基础设施之后。本服务不设置查询超时、行数限制或并发预算。脱敏关闭时，也不设置响应大小限制。脱敏开启时，编码后的 JSON 结果大于 1 MiB 不会返回。调用失败并返回 `[postgres_masking_failed] result was not returned`。
 
 ## 运行 MCP 与 HTTP
 
@@ -275,17 +383,41 @@ HTTP transport 没有认证或 TLS。默认只监听 loopback。若通过 `--lis
 ./bin/postgres-mcp-server mcp --port 8080 --listen 0.0.0.0
 ```
 
-HTTP 健康检查为 `GET /healthz`。transport 和工具过滤配置见 `config.example.yaml`；数据库连接仍只从环境变量读取。
+`GET /healthz` 和 `HEAD /healthz` 是健康检查端点。transport 和工具过滤配置见 [`config.example.yaml`](config.example.yaml)。数据库连接仍只从环境变量读取。
+
+显式 flag 覆盖同一设置的非空环境变量。非空环境变量覆盖 YAML。YAML 覆盖默认值。未传入的 flag 不会挡住环境变量或配置文件。此加载器使用 Viper `AutomaticEnv`，并且没有调用 `AllowEmptyEnv`，因此空的环境变量视为不存在。它会留下 YAML 的值；文件没有该值时使用默认值。`MCP_MASKING_JSON` 是例外。`LoadConfig` 用 `LookupEnv` 读取它。变量存在但为空或只含空白时无效，不会留下 YAML 对象。
+
+| YAML 键 | Flag | 环境变量 | 默认值 |
+|---|---|---|---|
+| `port` | `--port` | `MCP_PORT` | `0` |
+| `listen` | `--listen` | `MCP_LISTEN` | `127.0.0.1` |
+| `sse_base_url` | `--sse-base-url` | `MCP_SSE_BASE_URL` | 空 |
+| `log_level` | `--log-level` | `MCP_LOG_LEVEL` | `info` |
+| `enabled_tools` | `--enabled-tools` | `MCP_ENABLED_TOOLS` | 空 |
+| `disabled_tools` | `--disabled-tools` | `MCP_DISABLED_TOOLS` | 空 |
+| `enabled_domains` | `--enable-domains` | `MCP_ENABLED_DOMAINS` | 空 |
+| `disabled_domains` | `--disable-domains` | `MCP_DISABLED_DOMAINS` | 空 |
+| `allow_unsafe_database_role` | 无 | `MCP_ALLOW_UNSAFE_DATABASE_ROLE` | `false` |
+
+`port` 必须在 0 到 65535 之间。`0` 保持 stdio。其它端口启动 HTTP，且必须设置 `listen`。日志级别是 `trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic` 和 `disabled`。stdio 模式丢弃日志，使 MCP 消息留在 stdout。HTTP 模式把日志写到 stderr。
+
+`MCP_ENABLED_TOOLS` 和其它列表变量用逗号分隔。空格属于同一个名字，不是分隔符。空的启用列表允许全部工具或 domain。非空启用列表是允许列表。禁用列表随后移除匹配项。唯一的 domain 是 `postgres`。过滤器去掉全部工具时，启动失败，错误是 `no tools registered; check enabled_tools / disabled_tools / domain filters`。`tools list` 使用同一过滤器，并且仍然不连接数据库。
 
 ## CLI
+
+这些命令属于你构建的二进制，或平台包里的二进制。npm 包装命令不会运行它们，因为它总会插入 `mcp`。
 
 ```sh
 ./bin/postgres-mcp-server tools list --json
 ./bin/postgres-mcp-server tools describe postgres_query --json
 ./bin/postgres-mcp-server tools call postgres_list_schemas --params '{}'
 ./bin/postgres-mcp-server tools call postgres_query --params '{"sql":"SELECT 1"}'
+./bin/postgres-mcp-server tools call postgres_query --params-file ./query.json
 ./bin/postgres-mcp-server version
+./bin/postgres-mcp-server completion bash
 ```
+
+`--params` 默认为 `{}`。`--params-file -` 从 stdin 读取 JSON object。`version` 打印 `postgres-mcp-server version=<version> commit=<commit> date=<date>`。`completion` 写出 bash、zsh、fish 或 powershell 脚本。`completion install` 打印要加入 shell 配置文件的行。`tools` 也可以用别名 `tool`。
 
 ## 容器
 
@@ -303,15 +435,31 @@ docker run --rm -i \
   postgres-mcp-server:dev
 ```
 
-镜像入口是 `postgres-mcp-server mcp`。
+镜像入口是 `/usr/local/bin/postgres-mcp-server mcp`。
 
-## 开发检查
+## 构建、测试与贡献
+
+Go 1.25.10 与 `go.mod`、`.tool-versions` 和 CI 一致。SQL 解析包使用 cgo，因此构建需要 C 编译器。`make build` 写出 `bin/postgres-mcp-server`。版本来自 `git describe --tags --always --dirty`，commit 来自 `HEAD`，日期是当前 UTC 时间。干净检出的 tag `v0.4.0` 会打印 `version=v0.4.0`。工作区有未提交改动时会追加 `-dirty`。不带这些链接参数的 `go build` 会打印 `version=dev`、`commit=unknown` 和 `date=unknown`。
 
 ```sh
 make format
 make lint
 make test
-make test-integration  # 需要 Docker；默认 postgres:17-alpine。POSTGRES_IMAGE=postgres:14-alpine 选择 14。CI 两者都跑。
+make test-integration  # 需要 Docker；默认 postgres:17-alpine。POSTGRES_IMAGE=postgres:14-alpine 选择 14。
 make build
 make docker
 ```
+
+`make lint` 运行 `go vet` 并检查 `gofmt`。只有 `golangci-lint` 在 `PATH` 上时才会运行它。CI 使用 golangci-lint v2.12.2。`make test` 是 `go test ./...`。GitHub Build 工作流还会运行 race detector，以及 PostgreSQL 14 和 17 两套集成夹具。`make ci` 运行 lint、单元测试、默认的 PostgreSQL 17 夹具和 `make build`。当改动的每个文件都是 `.gitignore`、`LICENSE`，或仓库根目录的 Markdown 文件时，Build 工作流不会启动。
+
+缺陷或改动请开一个 [issue](https://github.com/futuretea/postgres-mcp-server/issues)。
+
+## 发布
+
+稳定 tag `vX.Y.Z` 的一次推送会运行 npm 和 Docker 发布工作流。带 prerelease 后缀的 tag 不符合 tag 检查。
+
+npm 工作流为 `darwin/amd64`、`darwin/arm64`、`linux/amd64`、`linux/arm64` 和 `windows/amd64` 构建 cgo 二进制。它发布 `@futuretea/postgres-mcp-server` 和五个平台包，并创建一个带生成说明的 GitHub Release。该发布步骤不上传这些二进制。Release 的资源列表保持为空。
+
+Docker 工作流为 `linux/amd64` 和 `linux/arm64` 推送 `ghcr.io/futuretea/postgres-mcp-server:vX.Y.Z` 和 `:latest`。
+
+发布二进制里的版本字符串是去掉前导 `v` 的 tag。npm 工作流记录该 tag commit 的 committer date。Docker 工作流记录镜像构建时间。
