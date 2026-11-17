@@ -401,7 +401,7 @@ HTTP transport 没有认证或 TLS。默认只监听 loopback。若通过 `--lis
 
 `port` 必须在 0 到 65535 之间。`0` 保持 stdio。其它端口启动 HTTP，且必须设置 `listen`。日志级别是 `trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic` 和 `disabled`。stdio 模式丢弃日志，使 MCP 消息留在 stdout。HTTP 模式把日志写到 stderr。
 
-`MCP_ENABLED_TOOLS` 和其它列表变量用逗号分隔。空格属于同一个名字，不是分隔符。空的启用列表允许全部工具或 domain。非空启用列表是允许列表。禁用列表随后移除匹配项。唯一的 domain 是 `postgres`。过滤器去掉全部工具时，启动失败，错误是 `no tools registered; check enabled_tools / disabled_tools / domain filters`。`tools list` 使用同一过滤器，并且仍然不连接数据库。
+`MCP_ENABLED_TOOLS` 和其它列表变量用逗号分隔。空格属于同一个名字，不是分隔符。空的启用列表允许全部工具或 domain。非空启用列表是允许列表。列表里有条目，但去掉空白后没有名称时，配置无效。错误指出字段，例如 `enabled_tools contains no names`，并且不包含列表原文。禁用列表随后移除匹配项。唯一的 domain 是 `postgres`。过滤器去掉全部工具时，启动失败，错误是 `no tools registered; check enabled_tools / disabled_tools / domain filters`。`tools list` 使用同一过滤器，并且仍然不连接数据库。
 
 ## CLI
 

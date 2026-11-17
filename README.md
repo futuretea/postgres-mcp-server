@@ -401,7 +401,7 @@ An explicit flag overrides a non-empty environment variable for the same setting
 
 `port` must be from 0 through 65535. `0` keeps stdio. Any other port starts HTTP, and `listen` must be set. Log levels are `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`, and `disabled`. Stdio mode discards logs so MCP messages stay on stdout. HTTP mode writes logs to stderr.
 
-`MCP_ENABLED_TOOLS` and the other list variables are comma-separated. A space is part of one name, not a separator. An empty enable list allows every tool or domain. A non-empty enable list is an allow-list. Disable lists then remove matches. The only domain is `postgres`. If the filter removes every tool, startup fails with `no tools registered; check enabled_tools / disabled_tools / domain filters`. `tools list` uses the same filter and still does not connect.
+`MCP_ENABLED_TOOLS` and the other list variables are comma-separated. A space is part of one name, not a separator. An empty enable list allows every tool or domain. A non-empty enable list is an allow-list. A list that is present but trims to no names is invalid. The error names the field, for example `enabled_tools contains no names`, and omits the list text. Disable lists then remove matches. The only domain is `postgres`. If the filter removes every tool, startup fails with `no tools registered; check enabled_tools / disabled_tools / domain filters`. `tools list` uses the same filter and still does not connect.
 
 ## CLI
 
